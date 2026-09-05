@@ -44,7 +44,7 @@ type Reporter interface {
 
 ## Dependency ports
 
-`enrichment` defines the `Cache` and enrichment `Metrics` interfaces it consumes. `cache` defines the smaller `Store` and cache `Metrics` interfaces used by the generic cache. `clock` defines the shared time-source abstraction, and `logging` defines a message-only `Logger`. Nil metrics and logger dependencies use no-op implementations.
+`enrichment` defines the `Cache` and enrichment `Metrics` interfaces it consumes. `reporting` defines its reporting `Metrics` interface. `cache` defines the smaller `Store` and cache `Metrics` interfaces used by the generic cache. `clock` defines the shared time-source abstraction, and `logging` defines a message-only `Logger`. Nil metrics and logger dependencies use no-op implementations.
 
 ```go
 package logging
@@ -62,8 +62,10 @@ The generic cache uses a required `Store` when enabled. A nil cache disables cac
 
 - `enrichment` owns OpenRTB extraction, exact S2S URL construction, key extraction, cache state handling, S2S timeout, result mapping, and enrichment metrics.
 - `iiqapi/s2s` owns HTTP execution, the consent header, response parsing, status validation, and typed API errors.
+- `reporting` owns exact one-bid report construction, default currency, reporting timeout, API invocation, logging, and reporting metrics.
+- `iiqapi/reporting` owns execution of an already-built report URL, response draining/closing, and typed request, transport, and timeout errors.
 - `cache` owns FreeCache-backed L1 behavior, L2 access, alias backfill, serialization, TTL policy, and L2 metrics.
-- Host adapters own configuration mapping, concrete integrations, hook mutations, flow context, final fail-open conversion, debug-trace rendering, and resource shutdown.
+- Host adapters own configuration mapping, concrete integrations, hook mutations, flow context, bid iteration, asynchronous reporting and panic recovery, final fail-open conversion, debug-trace rendering, and resource shutdown.
 - Core components emit messages through `logging.Logger`; hosts provide Glog, Zerolog, or other adapters.
 
 ## Construction
@@ -94,7 +96,19 @@ type Dependencies struct {
 func New(Dependencies, maxCacheKeys int) (Enricher, error)
 ```
 
-Nil S2S and an enabled cache with nil Store are errors. Nil cache disables caching. Nil metrics and logger use no-op implementations; a nil clock uses the real clock. `cache.Config.MaxKeys` is the single configuration source for the Enricher key limit.
+```go
+package reporting
+
+type Dependencies struct {
+	API     iiqreporting.API
+	Metrics Metrics
+	Logger  logging.Logger
+}
+
+func New(Dependencies) (Reporter, error)
+```
+
+Nil S2S, nil reporting API, and an enabled cache with nil Store are errors. Nil cache disables caching. Nil metrics and logger use no-op implementations; a nil clock uses the real clock. `cache.Config.MaxKeys` is the single configuration source for the Enricher key limit.
 
 ## Folder structure
 
