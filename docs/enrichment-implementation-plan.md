@@ -50,20 +50,20 @@ Depends on Block 1. Uses no network or cache.
 
 Scope:
 
-- [ ] Implement deterministic URL construction in `enrichment/params.go`.
-- [ ] Preserve fixed order: `at`, `mi`, `dpi`, `pt`, `dpn`, `srvrReq`, `source`.
-- [ ] Preserve existing endpoint query parameters.
-- [ ] Encode spaces as `%20` and omit whitespace-only values.
-- [ ] Map IP, IPv6, raw UA, site/app reference, and existing `intentiq.com` UID.
-- [ ] Map IFA to `pcid`/`idtype`, suppress for LMT, and uppercase CTV types `3` and `7`.
-- [ ] Map GDPR, TCF consent, US Privacy, GPP, and GPP SID, including JSON `ext` fallbacks.
+- [x] Implement deterministic URL construction in `enrichment/params.go`.
+- [x] Preserve fixed order: `at`, `mi`, `dpi`, `pt`, `dpn`, `srvrReq`, `source`.
+- [x] Preserve existing endpoint query parameters.
+- [x] Encode spaces as `%20` and omit whitespace-only values.
+- [x] Map IP, IPv6, raw UA, site/app reference, and existing `intentiq.com` UID.
+- [x] Map IFA to `pcid`/`idtype`, suppress for LMT, and uppercase CTV types `3` and `7`.
+- [x] Map GDPR, TCF consent, US Privacy, GPP, and GPP SID, including JSON `ext` fallbacks.
 
 Tests and completion gate:
 
-- [ ] Port the applicable exact URL and consent tests from `params_test.go`.
-- [ ] Assert complete URLs where ordering matters, not only individual query values.
-- [ ] Cover nil request, nil device/user/regs, malformed extensions, and blank values.
-- [ ] Parameter tests pass without importing Prebid Server wrappers or utilities.
+- [x] Port the applicable exact URL and consent tests from `params_test.go`.
+- [x] Assert complete URLs where ordering matters, not only individual query values.
+- [x] Cover nil request, nil device/user/regs, malformed extensions, and blank values.
+- [x] Parameter tests pass without importing Prebid Server wrappers or utilities.
 
 ## Block 4: structured UA hints
 
