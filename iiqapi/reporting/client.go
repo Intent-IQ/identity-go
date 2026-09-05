@@ -1,4 +1,3 @@
-// Package reporting implements the IIQ impression reporting API.
 package reporting
 
 import (
@@ -14,16 +13,6 @@ import (
 )
 
 const maxErrorSnippetSize = 1024
-
-// API sends impressions to the IIQ reporting API.
-type API interface {
-	ReportImpression(context.Context, Request) error
-}
-
-type Request struct {
-	Endpoint string
-	Params   url.Values
-}
 
 type Client struct{ httpClient *http.Client }
 

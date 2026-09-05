@@ -25,7 +25,7 @@ type Enricher interface {
 ## Implementation
 
 1. Implement `iiqapi/s2s.API` as a small HTTP client. It sends the supplied URL with an optional `gdpr-consent` header, validates the status, parses the response, and returns typed errors.
-2. Implement `enrichment.Enricher` using injected S2S, cache, and metrics interfaces.
+2. Implement `enrichment.Enricher` using injected S2S, cache, metrics, and logger interfaces.
 3. Move OpenRTB extraction and exact S2S URL construction into `enrichment`:
    - fixed `at=39`, `mi=10`, `pt=17`, `dpn=1`, `srvrReq=true`, and `source=pbsgo` parameters;
    - IP, IPv6, UA, UA hints, device ID, referrer, existing IIQ UID, GDPR, US Privacy, GPP, and TCF consent;
@@ -50,6 +50,8 @@ cache/
   cache.go            # generic identity-cache implementation
   store.go            # backend-neutral Store interface
   memory.go           # FreeCache-backed L1 cache
+clock/
+  clock.go            # shared Clock and real implementation
 integrations/
   prometheus/         # enrichment.Metrics implementation
   aerospike/          # cache.Store implementation
@@ -124,12 +126,14 @@ type Config struct {
 ### Clock
 
 ```go
+package clock
+
 type Clock interface {
 	Now() time.Time
 }
 ```
 
-The cache uses a real clock by default and accepts a fake clock through an option for deterministic TTL tests. Every entry creation, expiry check, L2 promotion, alias backfill, and remaining-TTL calculation must use this clock.
+`Clock` is a general core abstraction rather than a cache-owned interface. The cache uses `clock.RealClock` by default and accepts a fake implementation for deterministic TTL tests. Every entry creation, expiry check, L2 promotion, alias backfill, and remaining-TTL calculation must use this clock.
 
 ### Metrics
 
@@ -234,11 +238,21 @@ case "valkey":
 	store = valkey.New(cfg.Valkey)
 }
 
-identityCache := cache.New(store, cacheOptions)
+identityCache, err := cache.New(cache.Dependencies{
+	Store:   store,
+	Metrics: metrics,
+	Logger:  logger,
+	Clock:   clock.RealClock{},
+}, cacheConfig)
+if err != nil {
+	return err
+}
+
 enricher := enrichment.New(enrichment.Dependencies{
 	S2S:     s2sClient,
 	Cache:   identityCache,
 	Metrics: metrics,
+	Logger:  logger,
 }, cfg.MaxKeys)
 ```
 
@@ -260,7 +274,7 @@ github.com/Intent-IQ/identity-go/integrations/valkey
 
 `enrichment.Enricher` owns key extraction, cache lookup/state handling, exact URL construction, the bounded S2S call, positive/negative cache writes, result mapping, and metric events. It returns classified S2S errors rather than swallowing them.
 
-The Prebid adapter owns config mapping, hook payload conversion, request mutation, flow-context storage, concrete dependency wiring, logging, and conversion of an enrichment error into a fail-open hook result.
+The Prebid adapter owns config mapping, hook payload conversion, request mutation, flow-context storage, concrete dependency wiring, the concrete logger adapter, debug-trace rendering, and conversion of an enrichment error into a fail-open hook result.
 
 ### Enrichment outcome
 
@@ -307,7 +321,7 @@ A structured diagnostics result may be added later if adapters need cache layer,
 - Preserve cache hit, miss, negative, in-progress, alias, TTL, and fail-open behavior.
 - Preserve existing cache keys and serialized entries across mixed-version deployments.
 - Reject a nil Store when constructing an enabled cache; do not create an implicit L1-only cache.
-- Preserve the names, labels, and emission points of existing enrichment business metrics; concrete cache adapters preserve backend-operation metrics.
+- Preserve the names, labels, and emission points of existing enrichment business metrics; the generic cache emits backend-operation events through `cache.Metrics`.
 - L1 counters and gauges are intentionally removed; this is the only approved metrics compatibility exception.
 - Preserve exact L2 operation/result tokens and convert an absent API status to an empty Prometheus label.
 - Use the injected clock for every cache time calculation.

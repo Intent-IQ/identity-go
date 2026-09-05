@@ -14,23 +14,27 @@ type Enricher interface {
 }
 
 type Request struct {
-	PartnerID string
-	Endpoint  string
-	Auction   *openrtb2.BidRequest
-	Consent   Consent
+	PartnerID    string
+	Endpoint     string
+	Auction      *openrtb2.BidRequest
+	Timeout      time.Duration
+	CacheEnabled bool
 }
 
-type Consent struct {
-	GDPR       *int8
-	TCF        string
-	USPrivacy  string
-	GPP        string
-	GPPSection []int8
-}
+type Outcome string
+
+const (
+	OutcomeEnriched    Outcome = "enriched"
+	OutcomeNoIDs       Outcome = "no_ids"
+	OutcomeCachedNoIDs Outcome = "no_ids_cached"
+	OutcomeInProgress  Outcome = "in_progress"
+	OutcomeNoEndpoint  Outcome = "no_endpoint"
+)
 
 type Result struct {
 	EIDs             []openrtb2.EID
 	CacheTTL         time.Duration
 	ABTestUUID       string
 	TerminationCause *int64
+	Outcome          Outcome
 }

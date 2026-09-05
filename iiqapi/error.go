@@ -2,6 +2,7 @@
 package iiqapi
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
@@ -29,10 +30,14 @@ func (e *Error) Error() string {
 	if e == nil {
 		return "<nil>"
 	}
-	if e.Err == nil {
-		return string(e.Kind)
+	kind := string(e.Kind)
+	if kind == "" {
+		kind = "unknown"
 	}
-	return fmt.Sprintf("%s: %v", e.Kind, e.Err)
+	if e.Err == nil {
+		return kind
+	}
+	return fmt.Sprintf("%s: %v", kind, e.Err)
 }
 
 func (e *Error) Unwrap() error { return e.Err }
@@ -40,6 +45,9 @@ func (e *Error) Unwrap() error { return e.Err }
 func ErrorLabels(err error) (kind, status string) {
 	var apiErr *Error
 	if !errors.As(err, &apiErr) {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return string(ErrorTimeout), ""
+		}
 		return string(ErrorTransport), ""
 	}
 	if apiErr.Status != 0 {
