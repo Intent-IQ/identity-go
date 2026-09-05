@@ -1,2 +1,2 @@
-// Package valkey will provide the optional Valkey Store integration.
+// Package valkey provides the optional Valkey Store integration.
 package valkey

@@ -233,28 +233,28 @@ Depends on Block 8. Implement each provider as an independently reviewable sub-b
 
 ### Block 12A: Aerospike
 
-- [ ] Implement `cache.Store` with existing key, value, TTL, miss, and error behavior.
-- [ ] Port Aerospike configuration and tests.
-- [ ] Run the generic Store contract.
-- [ ] Verify BEPP can wire Aerospike without Redis or Valkey imports.
+- [x] Implement `cache.Store` with existing key, value, TTL, miss, and error behavior.
+- [x] Port Aerospike configuration and tests.
+- [x] Run the generic Store contract.
+- [x] Verify BEPP can wire Aerospike without Redis or Valkey imports.
 
 ### Block 12B: Redis
 
-- [ ] Implement `cache.Store` with existing key, value, TTL, miss, and error behavior.
-- [ ] Port Redis configuration and tests.
-- [ ] Run the generic Store contract.
+- [x] Implement `cache.Store` with existing key, value, TTL, miss, and error behavior.
+- [x] Port Redis configuration and tests.
+- [x] Run the generic Store contract.
 
 ### Block 12C: Valkey
 
-- [ ] Implement `cache.Store` with existing key, value, TTL, miss, and error behavior.
-- [ ] Port Valkey configuration and tests.
-- [ ] Run the generic Store contract.
+- [x] Implement `cache.Store` with existing key, value, TTL, miss, and error behavior.
+- [x] Port Valkey configuration and tests.
+- [x] Run the generic Store contract.
 
 Completion gate:
 
-- [ ] Provider configuration and connection lifecycle remain in host wiring.
-- [ ] Official Prebid Server can select all three providers.
-- [ ] Core packages remain free of provider dependencies.
+- [x] Provider configuration and connection lifecycle remain in host wiring.
+- [x] Official Prebid Server can select all three providers.
+- [x] Core packages remain free of provider dependencies.
 
 ## Block 13: `prebid-go-module` migration
 

@@ -1,2 +1,2 @@
-// Package aerospike will provide the optional Aerospike Store integration.
+// Package aerospike provides the optional Aerospike Store integration.
 package aerospike

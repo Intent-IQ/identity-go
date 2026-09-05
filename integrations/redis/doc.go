@@ -1,2 +1,2 @@
-// Package redis will provide the optional Redis Store integration.
+// Package redis provides the optional Redis Store integration.
 package redis
