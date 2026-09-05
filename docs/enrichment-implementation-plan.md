@@ -71,17 +71,17 @@ Depends on Block 3.
 
 Scope:
 
-- [ ] Implement the high-entropy `device.sua` mapping used by `uh`.
-- [ ] Preserve numeric keys `0` through `8` and current quoting.
-- [ ] Preserve major and full browser versions.
-- [ ] Sort brands deterministically.
-- [ ] Omit empty and low-entropy hints.
+- [x] Implement the high-entropy `device.sua` mapping used by `uh`.
+- [x] Preserve numeric keys `0` through `8` and current quoting.
+- [x] Preserve major and full browser versions.
+- [x] Sort brands deterministically.
+- [x] Omit empty and low-entropy hints.
 
 Tests and completion gate:
 
-- [ ] Port every existing UA-hint test unchanged in behavior.
-- [ ] Cover browser, platform, mobile, architecture, bitness, model, nil, and empty cases.
-- [ ] Re-run all Block 3 exact URL tests.
+- [x] Port every existing UA-hint test unchanged in behavior.
+- [x] Cover browser, platform, mobile, architecture, bitness, model, nil, and empty cases.
+- [x] Re-run all Block 3 exact URL tests.
 
 ## Block 5: cache models, TTL, and entry codec
 

@@ -20,6 +20,7 @@ const (
 	paramIP        = "ip"
 	paramIPv6      = "ipv6"
 	paramUA        = "uas"
+	paramUAHints   = "uh"
 	paramPCID      = "pcid"
 	paramIDType    = "idtype"
 	paramRef       = "ref"
@@ -61,6 +62,7 @@ func buildS2SRequest(input Request) (requestURL, consent string) {
 		appendParameter(&builder, paramIP, device.IP)
 		appendParameter(&builder, paramIPv6, device.IPv6)
 		appendParameter(&builder, paramUA, device.UA)
+		appendParameter(&builder, paramUAHints, buildUAHints(device.SUA))
 		appendDeviceID(&builder, device)
 	}
 	appendParameter(&builder, paramRef, resolveRef(request))
