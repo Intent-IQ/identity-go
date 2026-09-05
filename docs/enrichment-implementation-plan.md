@@ -108,16 +108,16 @@ Depends on Blocks 4 and 5.
 
 Scope:
 
-- [ ] Port ordered candidate-key extraction.
-- [ ] Preserve IIQ, shared/pubcid, MAID, other EID, and device-composite namespaces.
-- [ ] Preserve source casing rules, CTV IFA normalization, LMT behavior, and normalized UA.
-- [ ] Preserve first-occurrence deduplication and `Config.MaxKeys` capping.
+- [x] Port ordered candidate-key extraction.
+- [x] Preserve IIQ, shared/pubcid, MAID, other EID, and device-composite namespaces.
+- [x] Preserve source casing rules, CTV IFA normalization, LMT behavior, and normalized UA.
+- [x] Preserve first-occurrence deduplication and `Config.MaxKeys` capping.
 
 Tests and completion gate:
 
-- [ ] Port all key-extractor and user-agent normalization tests.
-- [ ] Verify exact key order, value, and type.
-- [ ] Verify `Config.MaxKeys` is the only key-limit source.
+- [x] Port all key-extractor and user-agent normalization tests.
+- [x] Verify exact key order, value, and type.
+- [x] Verify `Config.MaxKeys` is the only key-limit source.
 
 ## Block 7: FreeCache L1
 
