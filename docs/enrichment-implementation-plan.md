@@ -169,20 +169,20 @@ Depends on Blocks 2–4 and 6.
 
 Scope:
 
-- [ ] Implement `enrichment.New` validation and nil metrics/logger defaults.
-- [ ] Implement no-endpoint and nil-auction behavior.
-- [ ] Build the exact URL and consent, then call the injected S2S API.
-- [ ] Apply `Request.Timeout` only around the S2S call.
-- [ ] Map EIDs, TTL, A/B UUID, termination cause, and outcomes.
-- [ ] Return classified S2S errors for host-level fail-open handling.
-- [ ] Emit request, API duration, API success/error, enriched, and not-enriched events at existing points.
+- [x] Implement `enrichment.New` validation and nil metrics/logger defaults.
+- [x] Implement no-endpoint and nil-auction behavior.
+- [x] Build the exact URL and consent, then call the injected S2S API.
+- [x] Apply `Request.Timeout` only around the S2S call.
+- [x] Map EIDs, TTL, A/B UUID, termination cause, and outcomes.
+- [x] Return classified S2S errors for host-level fail-open handling.
+- [x] Emit request, API duration, API success/error, enriched, and not-enriched events at existing points.
 
 Tests and completion gate:
 
-- [ ] Test with a recording fake S2S API, metrics implementation, and logger.
-- [ ] Cover enriched, no IDs, no endpoint, nil auction, timeout, and every S2S error category.
-- [ ] Verify exact metric ordering/labels where observable.
-- [ ] Verify EID order and all reporting metadata.
+- [x] Test with a recording fake S2S API, metrics implementation, and logger.
+- [x] Cover enriched, no IDs, no endpoint, nil auction, timeout, and every S2S error category.
+- [x] Verify exact metric ordering/labels where observable.
+- [x] Verify EID order and all reporting metadata.
 
 ## Block 10: Enricher cache orchestration
 
