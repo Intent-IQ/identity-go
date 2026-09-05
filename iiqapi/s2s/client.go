@@ -14,6 +14,7 @@ import (
 
 const maxErrorSnippetSize = 1024
 
+// Client implements API over HTTP.
 type Client struct{ httpClient *http.Client }
 
 func NewClient(httpClient *http.Client) *Client {
@@ -29,7 +30,7 @@ func (c *Client) Resolve(ctx context.Context, requestURL, consent string) (Respo
 		return Response{}, &iiqapi.Error{Kind: iiqapi.ErrorRequest, Err: err}
 	}
 	if consent != "" {
-		req.Header.Set("gdpr-consent", consent)
+		req.Header.Set(GDPRConsentHeader, consent)
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -47,7 +48,7 @@ func (c *Client) Resolve(ctx context.Context, requestURL, consent string) (Respo
 			Kind:            iiqapi.ErrorStatus,
 			Status:          resp.StatusCode,
 			ResponseSnippet: strings.Join(strings.Fields(string(body)), " "),
-			Err:             fmt.Errorf("S2S API returned %d", resp.StatusCode),
+			Err:             fmt.Errorf("resolution API returned %d", resp.StatusCode),
 		}
 	}
 	body, err := io.ReadAll(resp.Body)

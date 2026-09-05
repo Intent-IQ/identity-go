@@ -15,6 +15,8 @@ type Response struct {
 	Status     int             `json:"-"`
 }
 
+// EIDs decodes resolved identifiers. Non-object data is treated as no result,
+// matching the S2S API's empty-string response behavior.
 func (r Response) EIDs() []openrtb2.EID {
 	var data struct {
 		EIDs []openrtb2.EID `json:"eids"`
@@ -25,6 +27,7 @@ func (r Response) EIDs() []openrtb2.EID {
 	return data.EIDs
 }
 
+// TTL returns the backend cache TTL in Go duration form.
 func (r Response) TTL() time.Duration {
 	if r.CacheTTL == nil {
 		return 0

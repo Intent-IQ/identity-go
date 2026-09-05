@@ -28,21 +28,21 @@ Depends on Block 1.
 
 Scope:
 
-- [ ] Implement `s2s.API.Resolve(ctx, requestURL, consent)`.
-- [ ] Send a GET to the supplied URL without rebuilding or reordering it.
-- [ ] Add `gdpr-consent` only when consent is nonempty.
-- [ ] Parse `data`, `cttl`, `abTestUuid`, `tc`, and HTTP status.
-- [ ] Preserve request, transport, timeout, status, body-read, and parse errors.
-- [ ] Capture a single-line error snippet from at most 1024 response bytes.
-- [ ] Drain and close bodies so connections remain reusable.
+- [x] Implement `s2s.API.Resolve(ctx, requestURL, consent)`.
+- [x] Send a GET to the supplied URL without rebuilding or reordering it.
+- [x] Add `gdpr-consent` only when consent is nonempty.
+- [x] Parse `data`, `cttl`, `abTestUuid`, `tc`, and HTTP status.
+- [x] Preserve request, transport, timeout, status, body-read, and parse errors.
+- [x] Capture a single-line error snippet from at most 1024 response bytes.
+- [x] Drain and close bodies so connections remain reusable.
 
 Tests and completion gate:
 
-- [ ] Port all `prebid-go-module/enrichment/client_test.go` cases without weaker assertions.
-- [ ] Cover successful EIDs, empty-string `data`, absent TTL, and invalid top-level JSON.
-- [ ] Cover consent presence/absence, non-2xx, timeout, unreachable server, and body-read failure.
-- [ ] Verify error snippet normalization/capping and connection reuse.
-- [ ] S2S package tests pass and the client has no Prebid Server dependency.
+- [x] Port all `prebid-go-module/enrichment/client_test.go` cases without weaker assertions.
+- [x] Cover successful EIDs, empty-string `data`, absent TTL, and invalid top-level JSON.
+- [x] Cover consent presence/absence, non-2xx, timeout, unreachable server, and body-read failure.
+- [x] Verify error snippet normalization/capping and connection reuse.
+- [x] S2S package tests pass and the client has no Prebid Server dependency.
 
 ## Block 3: S2S parameter builder
 
