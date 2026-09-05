@@ -51,6 +51,69 @@ func (enricher *enricher) Enrich(ctx context.Context, input Request) (Result, er
 		return Result{}, nil
 	}
 
+	if enricher.cache == nil || !input.CacheEnabled {
+		return enricher.resolve(ctx, input)
+	}
+
+	keys := extractCacheKeys(input.Auction, enricher.maxCacheKeys)
+	if len(keys) == 0 {
+		return enricher.resolve(ctx, input)
+	}
+
+	cached, err := enricher.cache.Get(ctx, keys)
+	if err != nil {
+		enricher.logger.Warn(fmt.Sprintf("identity enrichment cache read failed: %v", err))
+		cached = CacheResult{State: CacheMiss, Layer: CacheLayerNone}
+	}
+
+	switch cached.State {
+	case CacheHit:
+		enricher.metrics.CacheLookup(input.PartnerID, CacheLookupHit, cached.Layer)
+		result := cached.Result
+		result.Outcome = OutcomeEnriched
+		enricher.metrics.Enriched(input.PartnerID)
+		return result, nil
+	case CacheNegative:
+		enricher.metrics.CacheLookup(input.PartnerID, CacheLookupMiss, cached.Layer)
+		result := cached.Result
+		result.EIDs = nil
+		result.Outcome = OutcomeCachedNoIDs
+		enricher.metrics.NotEnriched(input.PartnerID, ReasonNoIDsCached)
+		return result, nil
+	case CacheInProgress:
+		enricher.metrics.CacheLookup(input.PartnerID, CacheLookupMiss, cached.Layer)
+		enricher.metrics.NotEnriched(input.PartnerID, ReasonInProgress)
+		return Result{Outcome: OutcomeInProgress}, nil
+	default:
+		enricher.metrics.CacheLookup(input.PartnerID, CacheLookupMiss, cached.Layer)
+		if err := enricher.cache.PutInProgress(ctx, keys); err != nil {
+			enricher.logger.Warn(fmt.Sprintf("identity enrichment cache in-progress write failed: %v", err))
+		}
+	}
+
+	result, err := enricher.resolve(ctx, input)
+	if err != nil {
+		return Result{}, err
+	}
+	if len(result.EIDs) > 0 {
+		if err := enricher.cache.PutResolved(ctx, keys, result); err != nil {
+			enricher.logger.Warn(fmt.Sprintf("identity enrichment cache resolved write failed: %v", err))
+		}
+		return result, nil
+	}
+
+	metadata := ResultMetadata{
+		CacheTTL:         result.CacheTTL,
+		ABTestUUID:       result.ABTestUUID,
+		TerminationCause: result.TerminationCause,
+	}
+	if err := enricher.cache.PutNegative(ctx, keys, metadata); err != nil {
+		enricher.logger.Warn(fmt.Sprintf("identity enrichment cache negative write failed: %v", err))
+	}
+	return result, nil
+}
+
+func (enricher *enricher) resolve(ctx context.Context, input Request) (Result, error) {
 	requestURL, consent := buildS2SRequest(input)
 	requestContext, cancel := context.WithTimeout(ctx, input.Timeout)
 	started := time.Now()

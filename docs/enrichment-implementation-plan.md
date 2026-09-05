@@ -190,22 +190,22 @@ Depends on Blocks 8 and 9.
 
 Scope:
 
-- [ ] Bypass cache when disabled or no candidate keys exist.
-- [ ] Return cached EIDs and metadata on a hit without S2S.
-- [ ] Return `OutcomeCachedNoIDs` for a negative hit.
-- [ ] Return `OutcomeInProgress` for an in-progress hit.
-- [ ] On miss, write in-progress markers, call S2S, then store positive or negative results.
-- [ ] Preserve cache lookup metric result/layer semantics.
-- [ ] Ignore cache write errors after a successful S2S result.
-- [ ] Fall through to S2S on cache read errors.
+- [x] Bypass cache when disabled or no candidate keys exist.
+- [x] Return cached EIDs and metadata on a hit without S2S.
+- [x] Return `OutcomeCachedNoIDs` for a negative hit.
+- [x] Return `OutcomeInProgress` for an in-progress hit.
+- [x] On miss, write in-progress markers, call S2S, then store positive or negative results.
+- [x] Preserve cache lookup metric result/layer semantics.
+- [x] Ignore cache write errors after a successful S2S result.
+- [x] Fall through to S2S on cache read errors.
 
 Tests and completion gate:
 
-- [ ] Port the cache-related processed-auction-request scenarios as Enricher unit tests.
-- [ ] Assert whether S2S and each cache method were called for every state.
-- [ ] Assert A/B UUID and termination cause survive positive and negative cache paths.
-- [ ] Verify all outcomes and not-enriched reasons.
-- [ ] Re-run Blocks 2–9 tests.
+- [x] Port the cache-related processed-auction-request scenarios as Enricher unit tests.
+- [x] Assert whether S2S and each cache method were called for every state.
+- [x] Assert A/B UUID and termination cause survive positive and negative cache paths.
+- [x] Verify all outcomes and not-enriched reasons.
+- [x] Re-run Blocks 2–9 tests.
 
 ## Block 11: Prometheus integration
 

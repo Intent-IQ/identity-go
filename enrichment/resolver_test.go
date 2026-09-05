@@ -46,6 +46,8 @@ type enrichmentMetricEvent struct {
 	kind      string
 	status    int
 	duration  time.Duration
+	lookup    CacheLookupResult
+	layer     CacheLayer
 }
 
 type recordingEnrichmentMetrics struct{ events []enrichmentMetricEvent }
@@ -68,8 +70,8 @@ func (metrics *recordingEnrichmentMetrics) APISuccess(partnerID string) {
 func (metrics *recordingEnrichmentMetrics) APIError(partnerID, kind string, statusCode int) {
 	metrics.events = append(metrics.events, enrichmentMetricEvent{name: "api_error", partnerID: partnerID, kind: kind, status: statusCode})
 }
-func (metrics *recordingEnrichmentMetrics) CacheLookup(string, CacheLookupResult, CacheLayer) {
-	metrics.events = append(metrics.events, enrichmentMetricEvent{name: "unexpected_cache_lookup"})
+func (metrics *recordingEnrichmentMetrics) CacheLookup(partnerID string, result CacheLookupResult, layer CacheLayer) {
+	metrics.events = append(metrics.events, enrichmentMetricEvent{name: "cache_lookup", partnerID: partnerID, lookup: result, layer: layer})
 }
 
 type recordingEnrichmentLogger struct{ warnings []string }
