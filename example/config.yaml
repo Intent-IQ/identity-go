@@ -1,0 +1,21 @@
+partner_id: 1575370072
+timeout_ms: 500
+api_endpoint: http://localhost:9098/profiles_engine/ProfilesEngineServlet
+
+cache:
+  enabled: true
+  provider: valkey
+  ttl_seconds: 3600
+  max_keys: 10
+  max_size: 1048576
+  ttl_ceiling_first_party_seconds: 86400
+  ttl_ceiling_third_party_seconds: 3600
+  ttl_ceiling_device_seconds: 900
+  negative_ttl_seconds: 300
+  in_progress_ttl_seconds: 5
+
+valkey:
+  host: localhost
+  port: 6379
+  password: ""
+  connect_timeout_ms: 5000

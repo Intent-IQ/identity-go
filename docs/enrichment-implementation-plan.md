@@ -256,40 +256,25 @@ Completion gate:
 - [x] Official Prebid Server can select all three providers.
 - [x] Core packages remain free of provider dependencies.
 
-## Block 13: `prebid-go-module` migration
+## Block 13: example integration flow
 
-Depends on Blocks 1–12.
+Depends on Blocks 1–12. `prebid-go-module` remains unchanged as the behavioral reference implementation.
 
-Scope:
-
-- [ ] Replace local S2S, parameter, key extraction, cache orchestration, and enrichment-related metrics implementations with `identity-go` components.
-- [ ] Add thin adapters for hook payloads, mutations, flow context, Glog, configuration, and shutdown.
-- [ ] Preserve final fail-open behavior and append resolved EIDs after existing EIDs.
-- [ ] Preserve reporting metadata passed through module context.
-- [ ] Do not weaken existing behavioral assertions.
-
-Tests and completion gate:
-
-- [ ] Run `go test ./modules/intentiq/identity/...`.
-- [ ] Verify exact S2S URLs and consent headers.
-- [ ] Verify auction mutations, cache states, TTLs, metadata, metrics, tracing, and error behavior.
-- [ ] Record L1 metrics and their tests as the sole intentional compatibility removal.
-
-## Block 14: second-consumer validation
-
-Depends on Block 13.
-
-- [ ] Wire Enricher into `iiq-prebid-server`/BEPP with Aerospike only.
-- [ ] Prototype the official Prebid Server adapter.
-- [ ] Verify neither adapter duplicates URL, key extraction, cache, or S2S business logic.
-- [ ] Run both adapters against shared OpenRTB, S2S response, and cache fixtures.
-- [ ] Confirm public contracts are sufficient before declaring the implementation complete.
+- [x] Add a self-contained example under `example` that simulates the Prebid Server enrichment flow.
+- [x] Show host-owned configuration and wiring of the S2S client, generic cache, metrics, and logger.
+- [x] Wire the Valkey Store integration and take both Valkey and S2S settings from host-owned YAML configuration.
+- [x] Provide Docker Compose services for local Valkey and the standalone S2S mock.
+- [x] Show request conversion, resolved-EID mutation, reporting-metadata propagation, and final fail-open handling.
+- [x] Keep URL construction, key extraction, cache orchestration, and S2S business logic inside `identity-go`.
+- [x] Build and vet the example independently; running it exercises the configured S2S endpoint and then its cache.
+- [x] Confirm the public contracts are sufficient for the simulated host flow.
 
 ## Final completion gate
 
 - [ ] Every block is checked and reviewed.
 - [ ] Core and selected integration tests pass.
-- [ ] `prebid-go-module` passes all tests except the explicitly removed L1 metric tests.
+- [x] The example enrichment flow builds independently and its required local services are available through Docker Compose.
+- [ ] The unchanged `prebid-go-module` passes its existing tests as the compatibility baseline.
 - [ ] Cache data remains compatible during a mixed-version deployment.
 - [ ] No unapproved external dependency exists in the core module.
 - [ ] `docs/design.md` and `docs/enirchment-implementation.md` still match the implemented contracts.
