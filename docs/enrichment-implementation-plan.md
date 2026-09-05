@@ -144,24 +144,24 @@ Depends on Blocks 5–7.
 
 Scope:
 
-- [ ] Implement `enrichment.Cache` over FreeCache L1 and `cache.Store` L2.
-- [ ] Preserve ordered lookup and resolved-over-in-progress precedence.
-- [ ] Preserve L2 promotion and alias backfill using remaining TTL and destination ceilings.
-- [ ] Preserve positive, negative, and best-effort in-progress writes.
-- [ ] Keep `Get` then `PutInProgress` non-atomic.
-- [ ] Treat L2 read errors as misses and retain L1 success after L2 write errors.
-- [ ] Measure L2 get/put result and latency in the generic cache.
-- [ ] Use `clock.Clock` for every cache time calculation.
-- [ ] Reject enabled-cache construction with nil Store; never create implicit L1-only cache.
+- [x] Implement `enrichment.Cache` over FreeCache L1 and `cache.Store` L2.
+- [x] Preserve ordered lookup and resolved-over-in-progress precedence.
+- [x] Preserve L2 promotion and alias backfill using remaining TTL and destination ceilings.
+- [x] Preserve positive, negative, and best-effort in-progress writes.
+- [x] Keep `Get` then `PutInProgress` non-atomic.
+- [x] Treat L2 read errors as misses and retain L1 success after L2 write errors.
+- [x] Measure L2 get/put result and latency in the generic cache.
+- [x] Use `clock.Clock` for every cache time calculation.
+- [x] Reject enabled-cache construction with nil Store; never create implicit L1-only cache.
 
 Tests and completion gate:
 
-- [ ] Port all generic identity-cache tests except approved L1 metric assertions.
-- [ ] Test L1/L2 hit, miss, promotion, alias backfill, negative, in-progress, and expiry paths.
-- [ ] Test TTL ceilings and backend-provided `cttl` behavior.
-- [ ] Test L2 read/write errors, logger messages, and exact L2 metric events.
-- [ ] Test concurrent misses retain best-effort behavior without atomic guarantees.
-- [ ] Run a reusable Store contract against an in-memory fake.
+- [x] Port all generic identity-cache tests except approved L1 metric assertions.
+- [x] Test L1/L2 hit, miss, promotion, alias backfill, negative, in-progress, and expiry paths.
+- [x] Test TTL ceilings and backend-provided `cttl` behavior.
+- [x] Test L2 read/write errors, logger messages, and exact L2 metric events.
+- [x] Test concurrent misses retain best-effort behavior without atomic guarantees.
+- [x] Run a reusable Store contract against an in-memory fake.
 
 ## Block 9: Enricher without cache
 

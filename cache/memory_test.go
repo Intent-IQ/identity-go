@@ -28,6 +28,12 @@ func (clock *mutableClock) set(now time.Time) {
 	clock.now = now
 }
 
+func (clock *mutableClock) advance(duration time.Duration) {
+	clock.mu.Lock()
+	defer clock.mu.Unlock()
+	clock.now = clock.now.Add(duration)
+}
+
 func TestLocalCacheGetSetAndMiss(t *testing.T) {
 	clock := &mutableClock{now: time.UnixMilli(1_700_000_000_000)}
 	codec := newEntryCodec(clock)
