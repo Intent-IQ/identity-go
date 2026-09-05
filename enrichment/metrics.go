@@ -36,3 +36,5 @@ func (NoopMetrics) APIRequestDuration(string, time.Duration)          {}
 func (NoopMetrics) APISuccess(string)                                 {}
 func (NoopMetrics) APIError(string, string, int)                      {}
 func (NoopMetrics) CacheLookup(string, CacheLookupResult, CacheLayer) {}
+
+var _ Metrics = NoopMetrics{}

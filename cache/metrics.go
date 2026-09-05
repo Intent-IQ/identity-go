@@ -23,3 +23,5 @@ type NoopMetrics struct{}
 func (NoopMetrics) L2Request(string, string)   {}
 func (NoopMetrics) L2GetLatency(time.Duration) {}
 func (NoopMetrics) L2PutLatency(time.Duration) {}
+
+var _ Metrics = NoopMetrics{}

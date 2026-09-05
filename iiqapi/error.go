@@ -50,7 +50,7 @@ func ErrorLabels(err error) (kind, status string) {
 		}
 		return string(ErrorTransport), ""
 	}
-	if apiErr.Status != 0 {
+	if apiErr.Status > 0 {
 		status = strconv.Itoa(apiErr.Status)
 	}
 	return string(apiErr.Kind), status

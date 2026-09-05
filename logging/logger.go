@@ -12,3 +12,5 @@ type NoopLogger struct{}
 func (NoopLogger) Debug(string) {}
 func (NoopLogger) Warn(string)  {}
 func (NoopLogger) Error(string) {}
+
+var _ Logger = NoopLogger{}
