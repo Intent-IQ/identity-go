@@ -209,23 +209,23 @@ Tests and completion gate:
 
 ## Block 11: Prometheus integration
 
-Depends on Blocks 8–10. Resolve ordinary-package versus separate-module packaging before starting this block.
+Depends on Blocks 8–10. Implemented as the separately versioned module described in the design documents, keeping Prometheus dependencies out of the core module.
 
 Scope:
 
-- [ ] Implement both `enrichment.Metrics` and `cache.Metrics`.
-- [ ] Preserve existing metric names and the `iiq_identity_` prefix.
-- [ ] Preserve labels and emission values for enrichment, API, cache lookup, and L2 operations.
-- [ ] Convert absent API status `0` to an empty label.
-- [ ] Preserve L2 operations `get`/`put` and results `hit`/`miss`/`stored`/`error`.
-- [ ] Exclude L1 counters and gauges intentionally.
-- [ ] Keep metrics server lifecycle outside the core implementation.
+- [x] Implement both `enrichment.Metrics` and `cache.Metrics`.
+- [x] Preserve existing metric names and the `iiq_identity_` prefix.
+- [x] Preserve labels and emission values for enrichment, API, cache lookup, and L2 operations.
+- [x] Convert absent API status `0` to an empty label.
+- [x] Preserve L2 operations `get`/`put` and results `hit`/`miss`/`stored`/`error`.
+- [x] Exclude L1 counters and gauges intentionally.
+- [x] Keep metrics server lifecycle outside the core implementation.
 
 Tests and completion gate:
 
-- [ ] Port Prometheus tests except explicit L1 metric cases.
-- [ ] Assert collector names, label values, histogram observations, and no duplicate registration.
-- [ ] Verify core packages remain free of Prometheus dependencies.
+- [x] Port Prometheus tests except explicit L1 metric cases.
+- [x] Assert collector names, label values, histogram observations, and no duplicate registration.
+- [x] Verify core packages remain free of Prometheus dependencies.
 
 ## Block 12: Store integrations
 
