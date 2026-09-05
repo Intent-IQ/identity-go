@@ -21,6 +21,21 @@ const (
 	CacheInProgress
 )
 
+func (state CacheState) Token() string {
+	switch state {
+	case CacheMiss:
+		return "miss"
+	case CacheHit:
+		return "hit"
+	case CacheNegative:
+		return "negative"
+	case CacheInProgress:
+		return "in_progress"
+	default:
+		return "unknown"
+	}
+}
+
 type CacheLayer int
 
 const (
@@ -29,6 +44,17 @@ const (
 	CacheLayerL2
 )
 
+func (layer CacheLayer) Token() string {
+	switch layer {
+	case CacheLayerL1:
+		return "l1"
+	case CacheLayerL2:
+		return "l2"
+	default:
+		return "none"
+	}
+}
+
 type CacheKeyType int
 
 const (
@@ -36,6 +62,19 @@ const (
 	CacheKeyThirdParty
 	CacheKeyDevice
 )
+
+func (keyType CacheKeyType) Token() string {
+	switch keyType {
+	case CacheKeyFirstParty:
+		return "first_party"
+	case CacheKeyThirdParty:
+		return "third_party"
+	case CacheKeyDevice:
+		return "device"
+	default:
+		return "unknown"
+	}
+}
 
 type CacheKey struct {
 	Value string

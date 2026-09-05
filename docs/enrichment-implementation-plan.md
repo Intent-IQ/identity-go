@@ -89,18 +89,18 @@ Depends on Block 1. Uses a fake clock and no Store.
 
 Scope:
 
-- [ ] Implement cache states, layers, key types, and stable label tokens.
-- [ ] Implement the existing default and ceiling TTL policy.
-- [ ] Implement positive, negative, and in-progress entry encoding/decoding.
-- [ ] Use absolute expiry in Unix milliseconds and the injected clock.
-- [ ] Preserve JSON names, casing, and `omitempty` behavior.
+- [x] Implement cache states, layers, key types, and stable label tokens.
+- [x] Implement the existing default and ceiling TTL policy.
+- [x] Implement positive, negative, and in-progress entry encoding/decoding.
+- [x] Use absolute expiry in Unix milliseconds and the injected clock.
+- [x] Preserve JSON names, casing, and `omitempty` behavior.
 
 Tests and completion gate:
 
-- [ ] Port key, result, config, TTL, and entry tests.
-- [ ] Add fixed old-format fixtures for every entry type.
-- [ ] Verify old entries decode and new entries retain the old canonical format.
-- [ ] Test exact-expiry boundaries with a fake clock and no sleeps.
+- [x] Port key, result, config, TTL, and entry tests.
+- [x] Add fixed old-format fixtures for every entry type.
+- [x] Verify old entries decode and new entries retain the old canonical format.
+- [x] Test exact-expiry boundaries with a fake clock and no sleeps.
 
 ## Block 6: cache-key extraction
 
