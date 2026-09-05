@@ -125,18 +125,18 @@ Depends on Block 5.
 
 Scope:
 
-- [ ] Wrap FreeCache as the internal L1 implementation.
-- [ ] Preserve the 512 KiB minimum byte capacity.
-- [ ] Preserve concurrency safety and byte-bounded eviction.
-- [ ] Round TTL upward to whole seconds with a one-second floor.
-- [ ] Validate absolute expiry using `clock.Clock` after every read.
-- [ ] Do not expose or emit L1 metrics.
+- [x] Wrap FreeCache as the internal L1 implementation.
+- [x] Preserve the 512 KiB minimum byte capacity.
+- [x] Preserve concurrency safety and byte-bounded eviction.
+- [x] Round TTL upward to whole seconds with a one-second floor.
+- [x] Validate absolute expiry using `clock.Clock` after every read.
+- [x] Do not expose or emit L1 metrics.
 
 Tests and completion gate:
 
-- [ ] Test get/set, miss, expiry, malformed entry, and concurrent access.
-- [ ] Test capacity floor and TTL rounding.
-- [ ] Confirm removal of L1 counters and gauges is the only compatibility exception.
+- [x] Test get/set, miss, expiry, malformed entry, and concurrent access.
+- [x] Test capacity floor and TTL rounding.
+- [x] Confirm removal of L1 counters and gauges is the only compatibility exception.
 
 ## Block 8: generic two-layer cache
 
