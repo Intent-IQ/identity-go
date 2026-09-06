@@ -127,10 +127,10 @@ Tests and completion gate:
 
 ## Final compatibility review
 
-- [ ] Compare every report field and its order with `prebid-go-module/auctionresponse.go`.
-- [ ] Compare empty endpoint, currency default, HTTP status, timeout, metric, and error behavior.
-- [ ] Confirm asynchronous execution remains a host concern.
-- [ ] Confirm reporting never mutates or rejects an auction response.
-- [ ] Run all core and optional integration tests.
-- [ ] Run the unchanged `prebid-go-module` tests as the behavioral baseline.
-- [ ] Ensure `docs/design.md` and `docs/reporting-implementation.md` still match the implemented contracts.
+- [x] Compare every report field and its order with `prebid-go-module/auctionresponse.go`.
+- [x] Compare empty endpoint, currency default, HTTP status, timeout, metric, and error behavior.
+- [x] Confirm asynchronous execution remains a host concern.
+- [x] Confirm reporting never mutates or rejects an auction response.
+- [x] Run all core and optional integration tests.
+- [x] Run the unchanged `prebid-go-module` tests as the behavioral baseline.
+- [x] Ensure `docs/design.md` and `docs/reporting-implementation.md` still match the implemented contracts.

@@ -271,10 +271,10 @@ Depends on Blocks 1–12. `prebid-go-module` remains unchanged as the behavioral
 
 ## Final completion gate
 
-- [ ] Every block is checked and reviewed.
-- [ ] Core and selected integration tests pass.
+- [x] Every block is checked and reviewed.
+- [x] Core and selected integration tests pass.
 - [x] The example enrichment flow builds independently and its required local services are available through Docker Compose.
-- [ ] The unchanged `prebid-go-module` passes its existing tests as the compatibility baseline.
-- [ ] Cache data remains compatible during a mixed-version deployment.
-- [ ] No unapproved external dependency exists in the core module.
-- [ ] `docs/design.md` and `docs/enirchment-implementation.md` still match the implemented contracts.
+- [x] The unchanged `prebid-go-module` passes its existing tests as the compatibility baseline.
+- [x] Cache data remains compatible during a mixed-version deployment.
+- [x] No unapproved external dependency exists in the core module.
+- [x] `docs/design.md` and `docs/enirchment-implementation.md` still match the implemented contracts.

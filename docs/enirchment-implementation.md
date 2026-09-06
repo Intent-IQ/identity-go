@@ -149,7 +149,7 @@ type Metrics interface {
 }
 ```
 
-Only events already produced by `prebid-go-module` should be included initially. `enrichment.NoopMetrics()` is used when metrics are not configured, so the workflow requires no external metrics dependency.
+Only events already produced by `prebid-go-module` should be included initially. `enrichment.NoopMetrics{}` is used when metrics are not configured, so the workflow requires no external metrics dependency.
 
 `integrations/prometheus` supplies the standard Prometheus implementation. Consumers may provide any other implementation of `enrichment.Metrics`.
 
@@ -248,12 +248,15 @@ if err != nil {
 	return err
 }
 
-enricher := enrichment.New(enrichment.Dependencies{
+enricher, err := enrichment.New(enrichment.Dependencies{
 	S2S:     s2sClient,
 	Cache:   identityCache,
 	Metrics: metrics,
 	Logger:  logger,
 }, cfg.MaxKeys)
+if err != nil {
+	return err
+}
 ```
 
 The BEPP module imports and wires only the Aerospike integration. A consumer that needs no cache passes nil and imports no cache integration. The host closes the concrete store during shutdown.
