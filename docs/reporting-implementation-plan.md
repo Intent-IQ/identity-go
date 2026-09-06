@@ -68,26 +68,26 @@ Depends on Blocks 1–3.
 
 Scope:
 
-- [ ] Implement the documented `New(Dependencies) (Reporter, error)` constructor.
-- [ ] Require a non-nil API dependency and default nil metrics/logger to no-op implementations.
-- [ ] Implement a successful no-op for an exactly empty endpoint.
-- [ ] Build the URL before starting the per-report timeout.
-- [ ] Apply `Request.Timeout` only around the API call.
-- [ ] Preserve immediate expiry for zero and negative timeouts.
-- [ ] Call the injected API synchronously for exactly one bid.
-- [ ] Emit `ImpressionReported` after success.
-- [ ] Emit `ImpressionError`, log once, and return the original API error after failure.
-- [ ] Keep bid iteration, goroutines, panic recovery, and final fail-open policy out of Reporter.
+- [x] Implement the documented `New(Dependencies) (Reporter, error)` constructor.
+- [x] Require a non-nil API dependency and default nil metrics/logger to no-op implementations.
+- [x] Implement a successful no-op for an exactly empty endpoint.
+- [x] Build the URL before starting the per-report timeout.
+- [x] Apply `Request.Timeout` only around the API call.
+- [x] Preserve immediate expiry for zero and negative timeouts.
+- [x] Call the injected API synchronously for exactly one bid.
+- [x] Emit `ImpressionReported` after success.
+- [x] Emit `ImpressionError`, log once, and return the original API error after failure.
+- [x] Keep bid iteration, goroutines, panic recovery, and final fail-open policy out of Reporter.
 
 Tests and completion gate:
 
-- [ ] Test constructor validation and no-op dependency defaults.
-- [ ] Add a compile-time assertion for the concrete `Reporter` implementation.
-- [ ] Test with recording API, metrics, and logger implementations.
-- [ ] Cover empty endpoint, success, request error, transport error, positive timeout, and immediate zero/negative timeout.
-- [ ] Verify exact URL forwarding and metric/log emission order.
-- [ ] Verify the caller's context is not canceled.
-- [ ] Verify Reporter is safe for concurrent calls.
+- [x] Test constructor validation and no-op dependency defaults.
+- [x] Add a compile-time assertion for the concrete `Reporter` implementation.
+- [x] Test with recording API, metrics, and logger implementations.
+- [x] Cover empty endpoint, success, request error, transport error, positive timeout, and immediate zero/negative timeout.
+- [x] Verify exact URL forwarding and metric/log emission order.
+- [x] Verify the caller's context is not canceled.
+- [x] Verify Reporter is safe for concurrent calls.
 
 ## Block 5: Prometheus reporting metrics
 
