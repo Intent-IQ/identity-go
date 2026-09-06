@@ -46,21 +46,21 @@ Depends on Block 1.
 
 Scope:
 
-- [ ] Send a GET to the supplied URL without parsing or rebuilding it.
-- [ ] Drain and close every received response body.
-- [ ] Treat every received HTTP status, including non-2xx, as success.
-- [ ] Ignore body-drain and close errors to preserve existing behavior.
-- [ ] Return classified request, transport, and timeout errors.
-- [ ] Keep HTTP client lifecycle outside the API client.
+- [x] Send a GET to the supplied URL without parsing or rebuilding it.
+- [x] Drain and close every received response body.
+- [x] Treat every received HTTP status, including non-2xx, as success.
+- [x] Ignore body-drain and close errors to preserve existing behavior.
+- [x] Return classified request, transport, and timeout errors.
+- [x] Keep HTTP client lifecycle outside the API client.
 
 Tests and completion gate:
 
-- [ ] Verify the exact request URL and GET method.
-- [ ] Cover 2xx, redirect-disabled 3xx, 4xx, and 5xx responses as success.
-- [ ] Cover invalid URL, timeout, and transport errors.
-- [ ] Verify bodies are drained and closed and connections can be reused.
-- [ ] Verify body-drain and close failures are ignored after a response is received.
-- [ ] Verify concurrent calls are safe.
+- [x] Verify the exact request URL and GET method.
+- [x] Cover 2xx, redirect-disabled 3xx, 4xx, and 5xx responses as success.
+- [x] Cover invalid URL, timeout, and transport errors.
+- [x] Verify bodies are drained and closed and connections can be reused.
+- [x] Verify body-drain and close failures are ignored after a response is received.
+- [x] Verify concurrent calls are safe.
 
 ## Block 4: synchronous Reporter
 

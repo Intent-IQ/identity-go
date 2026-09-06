@@ -3,15 +3,11 @@ package reporting
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/Intent-IQ/identity-go/iiqapi"
 )
-
-const maxErrorSnippetSize = 1024
 
 type Client struct{ httpClient *http.Client }
 
@@ -35,20 +31,8 @@ func (c *Client) ReportImpression(ctx context.Context, requestURL string) error 
 		}
 		return &iiqapi.Error{Kind: kind, Err: err}
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorSnippetSize))
-		_, _ = io.Copy(io.Discard, resp.Body)
-		return &iiqapi.Error{
-			Kind:            iiqapi.ErrorStatus,
-			Status:          resp.StatusCode,
-			ResponseSnippet: strings.Join(strings.Fields(string(body)), " "),
-			Err:             fmt.Errorf("reporting API returned %d", resp.StatusCode),
-		}
-	}
-	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
-		return &iiqapi.Error{Kind: iiqapi.ErrorBodyRead, Status: resp.StatusCode, Err: err}
-	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
 	return nil
 }
 
