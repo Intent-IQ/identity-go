@@ -77,6 +77,19 @@ func TestCacheMetrics(t *testing.T) {
 	}
 }
 
+func TestReportingMetrics(t *testing.T) {
+	metrics, registry := newTestMetrics(t)
+
+	metrics.ImpressionReported("partner-a")
+	metrics.ImpressionReported("partner-a")
+	metrics.ImpressionError("partner-b")
+
+	assertCounter(t, metrics.impressionReported.WithLabelValues("partner-a"), 2)
+	assertCounter(t, metrics.impressionError.WithLabelValues("partner-b"), 1)
+	assertMetricLabel(t, registry, "iiq_identity_impression_reported_total", "partner_id", "partner-a")
+	assertMetricLabel(t, registry, "iiq_identity_impression_error_total", "partner_id", "partner-b")
+}
+
 func TestLatencyObservationsAndMetricNames(t *testing.T) {
 	metrics, registry := newTestMetrics(t)
 	metrics.Request("partner")
@@ -86,6 +99,8 @@ func TestLatencyObservationsAndMetricNames(t *testing.T) {
 	metrics.NotEnriched("partner", enrichment.ReasonNoIDs)
 	metrics.CacheLookup("partner", enrichment.CacheLookupMiss, enrichment.CacheLayerNone)
 	metrics.APIRequestDuration("partner", 150*time.Millisecond)
+	metrics.ImpressionReported("partner")
+	metrics.ImpressionError("partner")
 	metrics.L2GetLatency(500 * time.Microsecond)
 	metrics.L2PutLatency(time.Millisecond)
 	metrics.L2Request("get", "hit")
@@ -108,6 +123,8 @@ func TestLatencyObservationsAndMetricNames(t *testing.T) {
 		"iiq_identity_api_success_total",
 		"iiq_identity_cache_lookup_total",
 		"iiq_identity_enriched_total",
+		"iiq_identity_impression_error_total",
+		"iiq_identity_impression_reported_total",
 		"iiq_identity_l2_get_latency_seconds",
 		"iiq_identity_l2_put_latency_seconds",
 		"iiq_identity_l2_requests_total",
@@ -137,15 +154,40 @@ func TestNewReusesCollectorsWithoutDuplicateRegistration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second New() error = %v", err)
 	}
-	if first.requests != second.requests || first.l2GetLatency != second.l2GetLatency {
+	if first.requests != second.requests || first.impressionReported != second.impressionReported || first.impressionError != second.impressionError || first.l2GetLatency != second.l2GetLatency {
 		t.Fatal("New() did not reuse already registered collectors")
 	}
 	first.Request("partner")
 	second.Request("partner")
+	first.ImpressionReported("partner")
+	second.ImpressionReported("partner")
 	assertCounter(t, first.requests.WithLabelValues("partner"), 2)
+	assertCounter(t, first.impressionReported.WithLabelValues("partner"), 2)
 	if _, err := registry.Gather(); err != nil {
 		t.Fatalf("Gather() after repeated construction error = %v", err)
 	}
+}
+
+func assertMetricLabel(t *testing.T, registry *prom.Registry, metricName, labelName, labelValue string) {
+	t.Helper()
+	families, err := registry.Gather()
+	if err != nil {
+		t.Fatalf("Gather() error = %v", err)
+	}
+	for _, family := range families {
+		if family.GetName() != metricName {
+			continue
+		}
+		if len(family.Metric) != 1 || len(family.Metric[0].Label) != 1 {
+			t.Fatalf("metric %q has unexpected series or labels", metricName)
+		}
+		label := family.Metric[0].Label[0]
+		if label.GetName() != labelName || label.GetValue() != labelValue {
+			t.Fatalf("metric %q label = %s=%s, want %s=%s", metricName, label.GetName(), label.GetValue(), labelName, labelValue)
+		}
+		return
+	}
+	t.Fatalf("metric %q not found", metricName)
 }
 
 func assertCounter(t *testing.T, collector prom.Counter, want float64) {

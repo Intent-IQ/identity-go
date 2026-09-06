@@ -7,6 +7,7 @@ import (
 
 	identitycache "github.com/Intent-IQ/identity-go/cache"
 	"github.com/Intent-IQ/identity-go/enrichment"
+	"github.com/Intent-IQ/identity-go/reporting"
 	prom "github.com/prometheus/client_golang/prometheus"
 )
 
@@ -29,6 +30,9 @@ type Metrics struct {
 	enriched    *prom.CounterVec
 	notEnriched *prom.CounterVec
 	apiLatency  *prom.HistogramVec
+
+	impressionReported *prom.CounterVec
+	impressionError    *prom.CounterVec
 
 	l2GetLatency prom.Histogram
 	l2PutLatency prom.Histogram
@@ -89,6 +93,16 @@ func New(registerer prom.Registerer) (*Metrics, error) {
 	), []string{"partner_id"})); err != nil {
 		return nil, err
 	}
+	if metrics.impressionReported, err = registerCounterVec(registerer, prom.NewCounterVec(counterOpts(
+		"impression_reported_total", "Winning bids reported to the reports_endpoint, by partner_id.",
+	), []string{"partner_id"})); err != nil {
+		return nil, err
+	}
+	if metrics.impressionError, err = registerCounterVec(registerer, prom.NewCounterVec(counterOpts(
+		"impression_error_total", "Impression-report calls that failed, by partner_id.",
+	), []string{"partner_id"})); err != nil {
+		return nil, err
+	}
 	if metrics.l2GetLatency, err = registerHistogram(registerer, prom.NewHistogram(histogramOpts(
 		"l2_get_latency_seconds", "L2 (shared store) GET duration in seconds.", l2LatencyBuckets,
 	))); err != nil {
@@ -137,6 +151,14 @@ func (metrics *Metrics) APIError(partnerID, kind string, statusCode int) {
 
 func (metrics *Metrics) CacheLookup(partnerID string, result enrichment.CacheLookupResult, layer enrichment.CacheLayer) {
 	metrics.cacheLookup.WithLabelValues(string(result), layer.Token(), partnerID).Inc()
+}
+
+func (metrics *Metrics) ImpressionReported(partnerID string) {
+	metrics.impressionReported.WithLabelValues(partnerID).Inc()
+}
+
+func (metrics *Metrics) ImpressionError(partnerID string) {
+	metrics.impressionError.WithLabelValues(partnerID).Inc()
 }
 
 func (metrics *Metrics) L2Request(operation, result string) {
@@ -200,3 +222,4 @@ func register(registerer prom.Registerer, collector prom.Collector) (prom.Collec
 
 var _ enrichment.Metrics = (*Metrics)(nil)
 var _ identitycache.Metrics = (*Metrics)(nil)
+var _ reporting.Metrics = (*Metrics)(nil)

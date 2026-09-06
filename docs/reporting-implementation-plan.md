@@ -95,17 +95,17 @@ Depends on Blocks 1 and 4.
 
 Scope:
 
-- [ ] Extend the optional Prometheus integration to implement `reporting.Metrics`.
-- [ ] Add `iiq_identity_impression_reported_total{partner_id}`.
-- [ ] Add `iiq_identity_impression_error_total{partner_id}`.
-- [ ] Preserve idempotent collector registration.
-- [ ] Keep metrics server lifecycle outside the integration.
+- [x] Extend the optional Prometheus integration to implement `reporting.Metrics`.
+- [x] Add `iiq_identity_impression_reported_total{partner_id}`.
+- [x] Add `iiq_identity_impression_error_total{partner_id}`.
+- [x] Preserve idempotent collector registration.
+- [x] Keep metrics server lifecycle outside the integration.
 
 Tests and completion gate:
 
-- [ ] Assert exact collector names, labels, and counter values.
-- [ ] Verify repeated construction does not duplicate collectors.
-- [ ] Verify the core module gains no Prometheus dependency.
+- [x] Assert exact collector names, labels, and counter values.
+- [x] Verify repeated construction does not duplicate collectors.
+- [x] Verify the core module gains no Prometheus dependency.
 
 ## Block 6: example reporting flow
 
