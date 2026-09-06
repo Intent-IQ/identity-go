@@ -260,20 +260,20 @@ Completion gate:
 
 Depends on Blocks 1–12. `prebid-go-module` remains unchanged as the behavioral reference implementation.
 
-- [x] Add a self-contained example under `example` that simulates the Prebid Server enrichment flow.
+- [x] Add a self-contained example under `example/basic` that simulates the Prebid Server enrichment flow.
 - [x] Show host-owned configuration and wiring of the S2S client, generic cache, metrics, and logger.
 - [x] Wire the Valkey Store integration and take both Valkey and S2S settings from host-owned YAML configuration.
 - [x] Provide Docker Compose services for local Valkey and the standalone S2S mock.
 - [x] Show request conversion, resolved-EID mutation, reporting-metadata propagation, and final fail-open handling.
 - [x] Keep URL construction, key extraction, cache orchestration, and S2S business logic inside `identity-go`.
-- [x] Build and vet the example independently; running it exercises the configured S2S endpoint and then its cache.
+- [x] Build and vet the basic example independently; running it exercises the configured S2S endpoint and then its cache.
 - [x] Confirm the public contracts are sufficient for the simulated host flow.
 
 ## Final completion gate
 
 - [x] Every block is checked and reviewed.
 - [x] Core and selected integration tests pass.
-- [x] The example enrichment flow builds independently and its required local services are available through Docker Compose.
+- [x] The basic example enrichment flow builds independently and its required local services are available through Docker Compose.
 - [x] The unchanged `prebid-go-module` passes its existing tests as the compatibility baseline.
 - [x] Cache data remains compatible during a mixed-version deployment.
 - [x] No unapproved external dependency exists in the core module.

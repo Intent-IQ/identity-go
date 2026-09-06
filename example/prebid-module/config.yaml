@@ -1,0 +1,65 @@
+hooks:
+  enabled: true
+  modules:
+    intentiq:
+      identity:
+        enabled: true
+        partner_id: example-partner
+        api_endpoint: https://api.intentiq.com/profiles_engine/ProfilesEngineServlet
+        reports_endpoint: https://reports.intentiq.com/report
+        timeout: 1000 # milliseconds
+
+        metrics_enabled: true
+        metrics_port: 9091
+
+        cache:
+          enabled: true
+          provider: valkey # valkey, redis, or aerospike
+          ttl_seconds: 43200
+          max_keys: 10
+          max_size: 100000
+          ttl_ceiling_first_party_seconds: 86400
+          ttl_ceiling_third_party_seconds: 43200
+          ttl_ceiling_device_seconds: 3600
+          negative_ttl_seconds: 120
+          in_progress_ttl_seconds: 1800
+
+        valkey:
+          host: 127.0.0.1
+          port: 6379
+          password: ""
+          connect_timeout_ms: 5000
+
+        redis:
+          host: 127.0.0.1
+          port: 6379
+          password: ""
+          connect_timeout_ms: 5000
+
+        aerospike:
+          host: 127.0.0.1
+          port: 3000
+          namespace: test
+          set: identity
+          client_policy:
+            connection_queue_size: 1024
+            min_connections_per_node: 3
+            connect_timeout_ms: 5000
+            idle_timeout_ms: 0
+
+  host_execution_plan:
+    endpoints:
+      /openrtb2/auction:
+        stages:
+          processed_auction_request:
+            groups:
+              - timeout: 1000
+                hook_sequence:
+                  - module_code: intentiq.identity
+                    hook_impl_code: HandleProcessedAuctionHook
+          auction_response:
+            groups:
+              - timeout: 1000
+                hook_sequence:
+                  - module_code: intentiq.identity
+                    hook_impl_code: HandleAuctionResponseHook

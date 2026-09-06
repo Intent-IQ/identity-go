@@ -1,4 +1,4 @@
-module github.com/Intent-IQ/identity-go/example
+module github.com/Intent-IQ/identity-go/example/basic
 
 go 1.25.0
 
@@ -19,6 +19,6 @@ require (
 	golang.org/x/sys v0.43.0 // indirect
 )
 
-replace github.com/Intent-IQ/identity-go => ..
+replace github.com/Intent-IQ/identity-go => ../..
 
-replace github.com/Intent-IQ/identity-go/integrations/valkey => ../integrations/valkey
+replace github.com/Intent-IQ/identity-go/integrations/valkey => ../../integrations/valkey

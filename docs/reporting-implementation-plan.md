@@ -113,7 +113,7 @@ Depends on Blocks 1–5.
 
 Scope:
 
-- [x] Extend `example/` with reporting endpoint configuration and Reporter wiring.
+- [x] Extend `example/basic` with reporting endpoint configuration and Reporter wiring.
 - [x] Convert an example bid and enrichment result into a reporting request.
 - [x] Demonstrate host-owned fire-and-forget execution with a fresh background context and panic recovery; Reporter owns the configured timeout.
 - [x] Keep the bid response unchanged.
@@ -121,7 +121,7 @@ Scope:
 
 Tests and completion gate:
 
-- [x] The example builds and vets independently.
+- [x] The basic example builds and vets independently.
 - [ ] A local run resolves identity, uses Valkey on the second enrichment, and submits an impression report.
 - [x] Docker Compose configuration remains valid.
 
