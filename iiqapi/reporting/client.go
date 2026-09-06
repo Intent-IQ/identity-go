@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/Intent-IQ/identity-go/iiqapi"
@@ -23,11 +22,7 @@ func NewClient(httpClient *http.Client) *Client {
 	return &Client{httpClient: httpClient}
 }
 
-func (c *Client) ReportImpression(ctx context.Context, input Request) error {
-	requestURL, err := addQuery(input.Endpoint, input.Params)
-	if err != nil {
-		return &iiqapi.Error{Kind: iiqapi.ErrorRequest, Err: err}
-	}
+func (c *Client) ReportImpression(ctx context.Context, requestURL string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
 		return &iiqapi.Error{Kind: iiqapi.ErrorRequest, Err: err}
@@ -55,21 +50,6 @@ func (c *Client) ReportImpression(ctx context.Context, input Request) error {
 		return &iiqapi.Error{Kind: iiqapi.ErrorBodyRead, Status: resp.StatusCode, Err: err}
 	}
 	return nil
-}
-
-func addQuery(endpoint string, params url.Values) (string, error) {
-	u, err := url.Parse(endpoint)
-	if err != nil {
-		return "", err
-	}
-	query := u.Query()
-	for key, values := range params {
-		for _, value := range values {
-			query.Add(key, value)
-		}
-	}
-	u.RawQuery = query.Encode()
-	return u.String(), nil
 }
 
 var _ API = (*Client)(nil)

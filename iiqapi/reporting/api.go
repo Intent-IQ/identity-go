@@ -3,14 +3,8 @@ package reporting
 
 import (
 	"context"
-	"net/url"
 )
 
 type API interface {
-	ReportImpression(context.Context, Request) error
-}
-
-type Request struct {
-	Endpoint string
-	Params   url.Values
+	ReportImpression(ctx context.Context, requestURL string) error
 }

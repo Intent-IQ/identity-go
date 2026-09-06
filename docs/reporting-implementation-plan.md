@@ -6,17 +6,16 @@ Implement the blocks in order. Each block must compile, pass its tests, and be r
 
 Scope:
 
-- [ ] Finalize `iiqapi/reporting.API` with `ReportImpression(context.Context, requestURL string) error`.
-- [ ] Finalize `reporting.Reporter`, `Request`, `Dependencies`, and constructor contract.
-- [ ] Add `Request.Timeout` and retain all bid and enrichment-metadata fields.
-- [ ] Define reporting `Metrics` and its no-op implementation.
-- [ ] Require the API dependency and default nil metrics/logger to no-op implementations.
+- [x] Finalize `iiqapi/reporting.API` with `ReportImpression(context.Context, requestURL string) error`.
+- [x] Finalize `reporting.Reporter`, `Request`, and `Dependencies`; retain the documented constructor contract for Block 4.
+- [x] Add `Request.Timeout` and retain all bid and enrichment-metadata fields.
+- [x] Define reporting `Metrics` and its no-op implementation.
 
 Tests and completion gate:
 
-- [ ] Add compile-time assertions for API, Reporter, and no-op implementations.
-- [ ] Test constructor validation and defaults.
-- [ ] Core packages remain independent of Prebid Server and Prometheus.
+- [x] Add compile-time assertions for API and no-op implementations. Add the concrete `Reporter` assertion in Block 4.
+- [x] Test that request and dependency contracts retain all values and that no-op metrics are callable.
+- [x] Core packages remain independent of Prebid Server and Prometheus.
 
 ## Block 2: ordered report builder
 
@@ -69,6 +68,8 @@ Depends on Blocks 1–3.
 
 Scope:
 
+- [ ] Implement the documented `New(Dependencies) (Reporter, error)` constructor.
+- [ ] Require a non-nil API dependency and default nil metrics/logger to no-op implementations.
 - [ ] Implement a successful no-op for an exactly empty endpoint.
 - [ ] Build the URL before starting the per-report timeout.
 - [ ] Apply `Request.Timeout` only around the API call.
@@ -80,6 +81,8 @@ Scope:
 
 Tests and completion gate:
 
+- [ ] Test constructor validation and no-op dependency defaults.
+- [ ] Add a compile-time assertion for the concrete `Reporter` implementation.
 - [ ] Test with recording API, metrics, and logger implementations.
 - [ ] Cover empty endpoint, success, request error, transport error, positive timeout, and immediate zero/negative timeout.
 - [ ] Verify exact URL forwarding and metric/log emission order.

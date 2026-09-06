@@ -3,6 +3,7 @@ package reporting
 
 import (
 	"context"
+	"time"
 
 	"github.com/prebid/openrtb/v20/openrtb2"
 )
@@ -16,6 +17,7 @@ type Reporter interface {
 type Request struct {
 	PartnerID        string
 	Endpoint         string
+	Timeout          time.Duration
 	Bid              openrtb2.Bid
 	BidderCode       string
 	Currency         string
