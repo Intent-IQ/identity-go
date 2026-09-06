@@ -113,17 +113,17 @@ Depends on Blocks 1–5.
 
 Scope:
 
-- [ ] Extend `example/` with reporting endpoint configuration and Reporter wiring.
-- [ ] Convert an example bid and enrichment result into a reporting request.
-- [ ] Demonstrate host-owned fire-and-forget execution with a fresh background context and panic recovery; Reporter owns the configured timeout.
-- [ ] Keep the bid response unchanged.
-- [ ] Extend the Compose S2S mock to accept impression reports.
+- [x] Extend `example/` with reporting endpoint configuration and Reporter wiring.
+- [x] Convert an example bid and enrichment result into a reporting request.
+- [x] Demonstrate host-owned fire-and-forget execution with a fresh background context and panic recovery; Reporter owns the configured timeout.
+- [x] Keep the bid response unchanged.
+- [x] Extend the Compose S2S mock to accept impression reports.
 
 Tests and completion gate:
 
-- [ ] The example builds and vets independently.
+- [x] The example builds and vets independently.
 - [ ] A local run resolves identity, uses Valkey on the second enrichment, and submits an impression report.
-- [ ] Docker Compose configuration remains valid.
+- [x] Docker Compose configuration remains valid.
 
 ## Final compatibility review
 

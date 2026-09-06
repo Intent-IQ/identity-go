@@ -123,7 +123,7 @@ The existing implementation ignores an ordered-JSON marshal error and sends an e
 - Log an API failure and emit its metric exactly once inside `Reporter`.
 - Return the same error so the host can observe it without duplicating business metrics or ordinary error logging; reporting never changes the auction response.
 
-The preliminary `iiqapi/reporting` client currently builds queries from `url.Values` and rejects non-2xx responses. It must be revised to this contract during implementation.
+The `iiqapi/reporting` client follows this reporting-specific contract; unlike the S2S resolution client, it does not validate response status or parse a response payload.
 
 ## Ownership
 

@@ -4,6 +4,7 @@
 import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlsplit
 
 
 RESOLVED_ID = os.environ.get("MOCK_EID", "IIQ-LOCAL-DEV-ID")
@@ -24,6 +25,19 @@ class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def do_GET(self):
+        parsed = urlsplit(self.path)
+        if parsed.path == "/reports":
+            query = parse_qs(parsed.query)
+            print(
+                "iiq-s2s-api-mock impression dpi=%s rdata=%s"
+                % (query.get("dpi", [""])[0], query.get("rdata", [""])[0]),
+                flush=True,
+            )
+            self.send_response(204)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(BODY)))

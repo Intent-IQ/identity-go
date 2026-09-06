@@ -19,7 +19,7 @@ const (
 
 var l2LatencyBuckets = []float64{.0005, .001, .0025, .005, .01, .025, .05, .1, .25, .5, 1}
 
-// Metrics implements both enrichment.Metrics and cache.Metrics. Collector
+// Metrics implements enrichment.Metrics, cache.Metrics, and reporting.Metrics. Collector
 // registration is idempotent for a shared registry, so hosts can safely reuse
 // an integration during component wiring.
 type Metrics struct {
