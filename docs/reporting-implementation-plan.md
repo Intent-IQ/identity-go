@@ -23,22 +23,22 @@ Depends on Block 1. Uses no HTTP or goroutines.
 
 Scope:
 
-- [ ] Build one report URL with exact parameter order: `at`, `rtype`, `source`, `dpi`, `rdata`.
-- [ ] Preserve existing endpoint queries and the current `?`/`&` separator behavior.
-- [ ] Encode values with `url.QueryEscape` and replace `+` with `%20`.
-- [ ] Implement insertion-ordered `rdata` JSON.
-- [ ] Map bid, currency, original bid fields, and enrichment metadata exactly.
-- [ ] Default only an exactly empty currency to `USD`; retain whitespace currency and keep `biddingPlatformId` fixed at `"4"`.
-- [ ] Preserve the existing empty-`rdata` fallback if ordered JSON marshaling fails.
+- [x] Build one report URL with exact parameter order: `at`, `rtype`, `source`, `dpi`, `rdata`.
+- [x] Preserve existing endpoint queries and the current `?`/`&` separator behavior.
+- [x] Encode values with `url.QueryEscape` and replace `+` with `%20`.
+- [x] Implement insertion-ordered `rdata` JSON.
+- [x] Map bid, currency, original bid fields, and enrichment metadata exactly.
+- [x] Default only an exactly empty currency to `USD`; retain whitespace currency and keep `biddingPlatformId` fixed at `"4"`.
+- [x] Preserve the existing empty-`rdata` fallback if ordered JSON marshaling fails.
 
 Tests and completion gate:
 
-- [ ] Port ordered-map and report URL cases from `auctionresponse_test.go`.
-- [ ] Assert complete raw URLs and exact `rdata` JSON, not only parsed values.
-- [ ] Cover existing endpoint queries and reserved characters.
-- [ ] Cover valid, missing, blank, non-numeric, and malformed original-bid extensions.
-- [ ] Cover every optional metadata field, whitespace behavior, omission rule, and a non-nil zero termination cause.
-- [ ] Cover the ordered-JSON marshal-error fallback without returning a new error.
+- [x] Port ordered-map and report URL cases from `auctionresponse_test.go`.
+- [x] Assert complete raw URLs and exact `rdata` JSON, not only parsed values.
+- [x] Cover existing endpoint queries and reserved characters.
+- [x] Cover valid, missing, blank, non-numeric, and malformed original-bid extensions.
+- [x] Cover every optional metadata field, whitespace behavior, omission rule, and a non-nil zero termination cause.
+- [x] Cover the ordered-JSON marshal-error fallback without returning a new error.
 
 ## Block 3: reporting HTTP API
 
