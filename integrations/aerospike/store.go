@@ -24,10 +24,11 @@ type Client interface {
 }
 
 type Store struct {
-	client    Client
-	namespace string
-	set       string
-	closeOnce sync.Once
+	client     Client
+	namespace  string
+	set        string
+	ownsClient bool
+	closeOnce  sync.Once
 }
 
 func New(config Config) (*Store, error) {
@@ -40,11 +41,19 @@ func New(config Config) (*Store, error) {
 }
 
 func NewWithClient(client Client, namespace, set string) *Store {
+	return &Store{client: client, namespace: namespace, set: set, ownsClient: true}
+}
+
+// NewWithSharedClient creates a Store over a client owned by the host. Closing
+// the Store does not close the shared client.
+func NewWithSharedClient(client Client, namespace, set string) *Store {
 	return &Store{client: client, namespace: namespace, set: set}
 }
 
 func (store *Store) Close() error {
-	store.closeOnce.Do(store.client.Close)
+	if store.ownsClient {
+		store.closeOnce.Do(store.client.Close)
+	}
 	return nil
 }
 

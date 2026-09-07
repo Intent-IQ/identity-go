@@ -115,6 +115,28 @@ func TestStoreContractAndLegacyEncoding(t *testing.T) {
 	}
 }
 
+func TestSharedClientIsNotClosed(t *testing.T) {
+	client := newStubClient()
+	store := NewWithSharedClient(client, "ns", "identity")
+
+	if err := store.Put(t.Context(), "key", []byte("value"), time.Minute); err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
+	value, err := store.Get(t.Context(), "key")
+	if err != nil || string(value) != "value" {
+		t.Fatalf("Get() = (%q, %v)", value, err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("second Close() error = %v", err)
+	}
+	if client.closeCalls != 0 {
+		t.Fatalf("shared client close calls = %d, want 0", client.closeCalls)
+	}
+}
+
 func TestExpirationAndClientPolicyCompatibility(t *testing.T) {
 	for _, test := range []struct {
 		ttl  time.Duration
