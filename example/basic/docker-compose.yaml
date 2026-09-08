@@ -1,0 +1,21 @@
+services:
+  valkey:
+    image: valkey/valkey:8-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  iiq-s2s-api-mock:
+    image: python:3.12-alpine
+    command: ["python3", "/srv/server.py"]
+    environment:
+      PORT: "9098"
+      MOCK_EID: "IIQ-IDENTITY-GO-EXAMPLE"
+    volumes:
+      - ./s2s-mock/server.py:/srv/server.py:ro
+    ports:
+      - "9098:9098"
