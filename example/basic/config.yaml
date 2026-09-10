@@ -13,7 +13,6 @@ cache:
   ttl_ceiling_third_party_seconds: 3600
   ttl_ceiling_device_seconds: 900
   negative_ttl_seconds: 300
-  in_progress_ttl_seconds: 5
 
 valkey:
   host: localhost

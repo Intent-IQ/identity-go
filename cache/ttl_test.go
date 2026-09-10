@@ -14,7 +14,6 @@ func TestConfigTTLPolicy(t *testing.T) {
 		TTLCeilingThirdPartySeconds: 300,
 		TTLCeilingDeviceSeconds:     400,
 		NegativeTTLSeconds:          5,
-		InProgressTTLSeconds:        6,
 	}).TTLPolicy()
 
 	assertDuration(t, "default", 100*time.Second, policy.Default)
@@ -22,7 +21,6 @@ func TestConfigTTLPolicy(t *testing.T) {
 	assertDuration(t, "third-party ceiling", 300*time.Second, policy.ThirdPartyCeiling)
 	assertDuration(t, "device ceiling", 400*time.Second, policy.DeviceCeiling)
 	assertDuration(t, "negative", 5*time.Second, policy.NegativeTTL)
-	assertDuration(t, "in progress", 6*time.Second, policy.InProgressTTL)
 }
 
 func TestTTLPolicyCeilingFor(t *testing.T) {

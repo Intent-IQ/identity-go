@@ -17,7 +17,6 @@ func TestConfigJSONFields(t *testing.T) {
 		"ttl_ceiling_third_party_seconds": float64(5),
 		"ttl_ceiling_device_seconds":      float64(6),
 		"negative_ttl_seconds":            float64(7),
-		"in_progress_ttl_seconds":         float64(8),
 	}
 	config := Config{
 		Enabled:                     true,
@@ -29,7 +28,6 @@ func TestConfigJSONFields(t *testing.T) {
 		TTLCeilingThirdPartySeconds: 5,
 		TTLCeilingDeviceSeconds:     6,
 		NegativeTTLSeconds:          7,
-		InProgressTTLSeconds:        8,
 	}
 
 	encoded, err := json.Marshal(config)

@@ -86,7 +86,7 @@ func (enricher *enricher) Enrich(ctx context.Context, input Request) (Result, er
 		return Result{Outcome: OutcomeInProgress}, nil
 	default:
 		enricher.metrics.CacheLookup(input.PartnerID, CacheLookupMiss, cached.Layer)
-		if err := enricher.cache.PutInProgress(ctx, keys); err != nil {
+		if err := enricher.cache.PutInProgress(ctx, keys, input.Timeout); err != nil {
 			enricher.logger.Warn(fmt.Sprintf("identity enrichment cache in-progress write failed: %v", err))
 		}
 	}

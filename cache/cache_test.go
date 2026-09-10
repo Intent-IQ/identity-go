@@ -144,7 +144,6 @@ func testCacheConfig() Config {
 		TTLCeilingThirdPartySeconds: 600,
 		TTLCeilingDeviceSeconds:     300,
 		NegativeTTLSeconds:          120,
-		InProgressTTLSeconds:        15,
 	}
 }
 
@@ -301,7 +300,7 @@ func TestIdentityCacheNegativeAndInProgress(t *testing.T) {
 	}
 
 	inProgressKey := enrichment.CacheKey{Value: "in-progress", Type: enrichment.CacheKeyDevice}
-	_ = cache.PutInProgress(t.Context(), []enrichment.CacheKey{inProgressKey})
+	_ = cache.PutInProgress(t.Context(), []enrichment.CacheKey{inProgressKey}, 15*time.Second)
 	stored, _ = store.stored(inProgressKey.Value)
 	if stored.ttl != 15*time.Second {
 		t.Fatalf("in-progress TTL = %v, want 15s", stored.ttl)
@@ -316,7 +315,7 @@ func TestIdentityCacheResolvedWinsOverEarlierInProgressWithinLayer(t *testing.T)
 	cache, _, _, _, _ := newTestIdentityCache(t)
 	inProgress := enrichment.CacheKey{Value: "ip", Type: enrichment.CacheKeyFirstParty}
 	resolved := enrichment.CacheKey{Value: "resolved", Type: enrichment.CacheKeyThirdParty}
-	_ = cache.PutInProgress(t.Context(), []enrichment.CacheKey{inProgress})
+	_ = cache.PutInProgress(t.Context(), []enrichment.CacheKey{inProgress}, 15*time.Second)
 	_ = cache.PutResolved(t.Context(), []enrichment.CacheKey{resolved}, enrichment.Result{EIDs: []openrtb2.EID{{Source: "a.com"}}})
 
 	result, _ := cache.Get(t.Context(), []enrichment.CacheKey{inProgress, resolved})
@@ -348,7 +347,7 @@ func TestIdentityCacheL1InProgressShortCircuitsL2(t *testing.T) {
 	cache, store, _, _, _ := newTestIdentityCache(t)
 	inProgress := enrichment.CacheKey{Value: "ip", Type: enrichment.CacheKeyFirstParty}
 	resolved := enrichment.CacheKey{Value: "resolved", Type: enrichment.CacheKeyThirdParty}
-	_ = cache.PutInProgress(t.Context(), []enrichment.CacheKey{inProgress})
+	_ = cache.PutInProgress(t.Context(), []enrichment.CacheKey{inProgress}, 15*time.Second)
 	value := cache.codec.resolved(enrichment.Result{EIDs: []openrtb2.EID{{Source: "a.com"}}}, time.Minute)
 	encoded, _ := cache.codec.encode(value)
 	_ = store.Put(t.Context(), resolved.Value, encoded, time.Minute)

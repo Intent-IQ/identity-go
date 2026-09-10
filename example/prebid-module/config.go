@@ -37,7 +37,6 @@ func defaultConfig() Config {
 			TTLCeilingThirdPartySeconds: 43_200,
 			TTLCeilingDeviceSeconds:     3_600,
 			NegativeTTLSeconds:          120,
-			InProgressTTLSeconds:        1_800,
 		},
 	}
 }

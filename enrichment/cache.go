@@ -9,7 +9,7 @@ type Cache interface {
 	Get(context.Context, []CacheKey) (CacheResult, error)
 	PutResolved(context.Context, []CacheKey, Result) error
 	PutNegative(context.Context, []CacheKey, ResultMetadata) error
-	PutInProgress(context.Context, []CacheKey) error
+	PutInProgress(context.Context, []CacheKey, time.Duration) error
 }
 
 type CacheState int
