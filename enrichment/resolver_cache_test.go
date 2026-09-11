@@ -18,11 +18,10 @@ type recordingCache struct {
 	getErr error
 	putErr error
 
-	gets           [][]CacheKey
-	resolved       []cacheResolvedCall
-	negative       []cacheNegativeCall
-	inProgress     [][]CacheKey
-	inProgressTTLs []time.Duration
+	gets       [][]CacheKey
+	resolved   []cacheResolvedCall
+	negative   []cacheNegativeCall
+	inProgress [][]CacheKey
 }
 
 type cacheResolvedCall struct {
@@ -50,9 +49,8 @@ func (cache *recordingCache) PutNegative(_ context.Context, keys []CacheKey, met
 	return cache.putErr
 }
 
-func (cache *recordingCache) PutInProgress(_ context.Context, keys []CacheKey, ttl time.Duration) error {
+func (cache *recordingCache) PutInProgress(_ context.Context, keys []CacheKey) error {
 	cache.inProgress = append(cache.inProgress, cloneCacheKeys(keys))
-	cache.inProgressTTLs = append(cache.inProgressTTLs, ttl)
 	return cache.putErr
 }
 
@@ -257,17 +255,12 @@ func TestEnrichCacheFailuresRemainFailOpen(t *testing.T) {
 	})
 }
 
-func TestEnrichS2SErrorUsesRequestTimeoutForInProgressMarker(t *testing.T) {
+func TestEnrichS2SErrorAfterCacheMissLeavesInProgressMarker(t *testing.T) {
 	s2sError := errors.New("upstream failed")
 	cache := &recordingCache{}
 	api := &recordingS2S{err: s2sError}
-	request := cacheableRequest()
-	request.Timeout = 750 * time.Millisecond
-	result, err := newCachedTestEnricher(t, api, cache, &recordingEnrichmentMetrics{}, &recordingEnrichmentLogger{}, 10).Enrich(t.Context(), request)
+	result, err := newCachedTestEnricher(t, api, cache, &recordingEnrichmentMetrics{}, &recordingEnrichmentLogger{}, 10).Enrich(t.Context(), cacheableRequest())
 	if !errors.Is(err, s2sError) || !reflect.DeepEqual(result, Result{}) || len(cache.inProgress) != 1 || len(cache.resolved) != 0 || len(cache.negative) != 0 {
 		t.Fatalf("Enrich() = (%#v, %v), cache=%#v", result, err, cache)
-	}
-	if !reflect.DeepEqual(cache.inProgressTTLs, []time.Duration{request.Timeout}) {
-		t.Fatalf("in-progress TTLs = %v, want [%v]", cache.inProgressTTLs, request.Timeout)
 	}
 }

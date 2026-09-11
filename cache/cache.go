@@ -121,7 +121,8 @@ func (cache *identityCache) PutNegative(ctx context.Context, keys []enrichment.C
 	return nil
 }
 
-func (cache *identityCache) PutInProgress(ctx context.Context, keys []enrichment.CacheKey, ttl time.Duration) error {
+func (cache *identityCache) PutInProgress(ctx context.Context, keys []enrichment.CacheKey) error {
+	ttl := cache.policy.InProgressTTL
 	for _, key := range keys {
 		cache.writeBoth(ctx, key.Value, cache.codec.inProgress(ttl), ttl)
 	}
