@@ -106,7 +106,7 @@ func TestNewEnricher(t *testing.T) {
 }
 
 func TestEnrichMapsRequestAndResponse(t *testing.T) {
-	cacheTTL := int64(60)
+	cacheTTL := int64(60_000)
 	terminationCause := int64(120088)
 	api := &recordingS2S{response: s2s.Response{
 		Data:     json.RawMessage(`{"eids":[{"source":"first.com","uids":[{"id":"one"}]},{"source":"second.com","uids":[{"id":"two"}]}]}`),
@@ -152,7 +152,7 @@ func TestEnrichMapsRequestAndResponse(t *testing.T) {
 }
 
 func TestEnrichNoIDs(t *testing.T) {
-	cacheTTL := int64(30)
+	cacheTTL := int64(30_000)
 	terminationCause := int64(7)
 	api := &recordingS2S{response: s2s.Response{
 		Data: json.RawMessage(`{"eids":[]}`), CacheTTL: &cacheTTL, ABTestUUID: "ab-empty", TC: &terminationCause,

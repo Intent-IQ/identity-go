@@ -17,7 +17,7 @@ import (
 func TestResolveParsesResponse(t *testing.T) {
 	server := responseServer(t, http.StatusOK,
 		`{"data":{"eids":[{"source":"intentiq.com","uids":[{"id":"x"}]}]},`+
-			`"cttl":60,"abTestUuid":"ab-1","tc":120088}`,
+			`"cttl":60000,"abTestUuid":"ab-1","tc":120088}`,
 	)
 
 	got, err := NewClient(server.Client()).Resolve(t.Context(), server.URL, "")
@@ -43,7 +43,7 @@ func TestResolveParsesResponse(t *testing.T) {
 }
 
 func TestResolveEmptyDataIsSuccess(t *testing.T) {
-	server := responseServer(t, http.StatusOK, `{"data":"","cttl":30}`)
+	server := responseServer(t, http.StatusOK, `{"data":"","cttl":30000}`)
 
 	got, err := NewClient(server.Client()).Resolve(t.Context(), server.URL, "")
 	if err != nil {
@@ -201,6 +201,13 @@ func TestResponseHelpersAreLenient(t *testing.T) {
 		if got := (Response{Data: []byte(data)}).EIDs(); got != nil {
 			t.Fatalf("EIDs() for %q = %#v, want nil", data, got)
 		}
+	}
+}
+
+func TestResponseTTLUsesMilliseconds(t *testing.T) {
+	cacheTTL := int64(3_600_000)
+	if got, want := (Response{CacheTTL: &cacheTTL}).TTL(), time.Hour; got != want {
+		t.Fatalf("TTL() = %v, want %v", got, want)
 	}
 }
 

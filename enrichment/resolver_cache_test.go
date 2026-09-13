@@ -207,7 +207,7 @@ func TestEnrichHandlesEveryCacheState(t *testing.T) {
 }
 
 func TestEnrichCacheMissStoresPositiveResult(t *testing.T) {
-	cacheTTL := int64(900)
+	cacheTTL := int64(900_000)
 	terminationCause := int64(5)
 	api := &recordingS2S{response: s2s.Response{
 		Data:     json.RawMessage(`{"eids":[{"source":"intentiq.com","uids":[{"id":"resolved"}]}]}`),
@@ -230,7 +230,7 @@ func TestEnrichCacheMissStoresPositiveResult(t *testing.T) {
 }
 
 func TestEnrichCacheMissStoresNegativeMetadata(t *testing.T) {
-	cacheTTL := int64(300)
+	cacheTTL := int64(300_000)
 	terminationCause := int64(120088)
 	api := &recordingS2S{response: s2s.Response{
 		Data: json.RawMessage(`{"eids":[]}`), CacheTTL: &cacheTTL, ABTestUUID: "ab-negative", TC: &terminationCause,

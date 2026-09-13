@@ -32,5 +32,5 @@ func (r Response) TTL() time.Duration {
 	if r.CacheTTL == nil {
 		return 0
 	}
-	return time.Duration(*r.CacheTTL) * time.Second
+	return time.Duration(*r.CacheTTL) * time.Millisecond
 }
