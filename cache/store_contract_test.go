@@ -34,6 +34,13 @@ func runStoreContract(t *testing.T, factory storeFactory) {
 	if err != nil || !bytes.Equal(got, replacement) {
 		t.Fatalf("replacement Get() = (%q, %v), want %q", got, err, replacement)
 	}
+	if err := store.Delete(t.Context(), "key"); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	got, err = store.Get(t.Context(), "key")
+	if err != nil || got != nil {
+		t.Fatalf("Get() after Delete = (%q, %v), want (nil, nil)", got, err)
+	}
 
 	if err := store.Close(); err != nil {
 		t.Fatalf("first Close() error = %v", err)

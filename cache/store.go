@@ -9,5 +9,6 @@ import (
 type Store interface {
 	Get(context.Context, string) ([]byte, error)
 	Put(context.Context, string, []byte, time.Duration) error
+	Delete(context.Context, string) error
 	Close() error
 }

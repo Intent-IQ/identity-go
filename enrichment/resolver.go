@@ -93,6 +93,9 @@ func (enricher *enricher) Enrich(ctx context.Context, input Request) (Result, er
 
 	result, err := enricher.resolve(ctx, input)
 	if err != nil {
+		if clearErr := enricher.cache.ClearInProgress(ctx, keys); clearErr != nil {
+			enricher.logger.Warn(fmt.Sprintf("identity enrichment cache in-progress cleanup failed: %v", clearErr))
+		}
 		return Result{}, err
 	}
 	if len(result.EIDs) > 0 {

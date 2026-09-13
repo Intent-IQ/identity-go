@@ -45,6 +45,11 @@ func (client *stubClient) Put(policy *as.WritePolicy, key *as.Key, bins as.BinMa
 	return nil
 }
 
+func (client *stubClient) Delete(_ *as.WritePolicy, key *as.Key) (bool, as.Error) {
+	delete(client.records, key.String())
+	return true, nil
+}
+
 func TestStoreMissAndErrors(t *testing.T) {
 	client := newStubClient()
 	store := NewWithClient(client, "ns", "identity")

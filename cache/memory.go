@@ -41,6 +41,10 @@ func (cache *localCache) set(key string, encoded []byte, ttl time.Duration) erro
 	return cache.values.Set([]byte(key), encoded, freeCacheTTLSeconds(ttl))
 }
 
+func (cache *localCache) delete(key string) {
+	cache.values.Del([]byte(key))
+}
+
 // freeCacheTTLSeconds rounds upward because FreeCache accepts only whole seconds.
 // A one-second floor prevents sub-second or non-positive durations from becoming
 // immediate expiration, matching the previous cache implementation.

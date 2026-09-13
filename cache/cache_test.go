@@ -77,6 +77,13 @@ func (store *recordingStore) Put(_ context.Context, key string, value []byte, tt
 	return err
 }
 
+func (store *recordingStore) Delete(_ context.Context, key string) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	delete(store.values, key)
+	return nil
+}
+
 func (store *recordingStore) Close() error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
@@ -309,6 +316,41 @@ func TestIdentityCacheNegativeAndInProgress(t *testing.T) {
 	inProgress, _ := cache.Get(t.Context(), []enrichment.CacheKey{inProgressKey})
 	if inProgress.State != enrichment.CacheInProgress || inProgress.Layer != enrichment.CacheLayerL1 || inProgress.KeyType != enrichment.CacheKeyDevice {
 		t.Fatalf("in-progress result = %#v", inProgress)
+	}
+}
+
+func TestIdentityCacheClearInProgressDoesNotDeleteResolvedValue(t *testing.T) {
+	cache, _, _, _, _ := newTestIdentityCache(t)
+	key := enrichment.CacheKey{Value: "shared", Type: enrichment.CacheKeyThirdParty}
+	_ = cache.PutInProgress(t.Context(), []enrichment.CacheKey{key})
+	_ = cache.PutResolved(t.Context(), []enrichment.CacheKey{key}, enrichment.Result{
+		EIDs:     []openrtb2.EID{{Source: "intentiq.com"}},
+		CacheTTL: time.Minute,
+	})
+
+	if err := cache.ClearInProgress(t.Context(), []enrichment.CacheKey{key}); err != nil {
+		t.Fatalf("ClearInProgress() error = %v", err)
+	}
+	result, err := cache.Get(t.Context(), []enrichment.CacheKey{key})
+	if err != nil || result.State != enrichment.CacheHit {
+		t.Fatalf("Get() = (%#v, %v), want resolved cache hit", result, err)
+	}
+}
+
+func TestIdentityCacheClearInProgressRemovesL1AndL2Markers(t *testing.T) {
+	cache, store, _, _, _ := newTestIdentityCache(t)
+	key := enrichment.CacheKey{Value: "in-progress", Type: enrichment.CacheKeyThirdParty}
+	_ = cache.PutInProgress(t.Context(), []enrichment.CacheKey{key})
+
+	if err := cache.ClearInProgress(t.Context(), []enrichment.CacheKey{key}); err != nil {
+		t.Fatalf("ClearInProgress() error = %v", err)
+	}
+	result, err := cache.Get(t.Context(), []enrichment.CacheKey{key})
+	if err != nil || result.State != enrichment.CacheMiss {
+		t.Fatalf("Get() = (%#v, %v), want cache miss", result, err)
+	}
+	if _, found := store.stored(key.Value); found {
+		t.Fatal("in-progress marker remains in L2")
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Intent-IQ/identity-go/iiqapi"
 	"github.com/Intent-IQ/identity-go/iiqapi/s2s"
 	"github.com/prebid/openrtb/v20/openrtb2"
 )
@@ -22,6 +23,7 @@ type recordingCache struct {
 	resolved   []cacheResolvedCall
 	negative   []cacheNegativeCall
 	inProgress [][]CacheKey
+	cleared    [][]CacheKey
 }
 
 type cacheResolvedCall struct {
@@ -32,6 +34,29 @@ type cacheResolvedCall struct {
 type cacheNegativeCall struct {
 	keys     []CacheKey
 	metadata ResultMetadata
+}
+
+type retryCache struct {
+	recordingCache
+	inProgressSet bool
+}
+
+func (cache *retryCache) Get(ctx context.Context, keys []CacheKey) (CacheResult, error) {
+	cache.gets = append(cache.gets, cloneCacheKeys(keys))
+	if cache.inProgressSet {
+		return CacheResult{State: CacheInProgress, Layer: CacheLayerL1}, nil
+	}
+	return CacheResult{State: CacheMiss, Layer: CacheLayerNone}, nil
+}
+
+func (cache *retryCache) PutInProgress(ctx context.Context, keys []CacheKey) error {
+	cache.inProgressSet = true
+	return cache.recordingCache.PutInProgress(ctx, keys)
+}
+
+func (cache *retryCache) ClearInProgress(ctx context.Context, keys []CacheKey) error {
+	cache.inProgressSet = false
+	return cache.recordingCache.ClearInProgress(ctx, keys)
 }
 
 func (cache *recordingCache) Get(_ context.Context, keys []CacheKey) (CacheResult, error) {
@@ -51,6 +76,11 @@ func (cache *recordingCache) PutNegative(_ context.Context, keys []CacheKey, met
 
 func (cache *recordingCache) PutInProgress(_ context.Context, keys []CacheKey) error {
 	cache.inProgress = append(cache.inProgress, cloneCacheKeys(keys))
+	return cache.putErr
+}
+
+func (cache *recordingCache) ClearInProgress(_ context.Context, keys []CacheKey) error {
+	cache.cleared = append(cache.cleared, cloneCacheKeys(keys))
 	return cache.putErr
 }
 
@@ -255,12 +285,45 @@ func TestEnrichCacheFailuresRemainFailOpen(t *testing.T) {
 	})
 }
 
-func TestEnrichS2SErrorAfterCacheMissLeavesInProgressMarker(t *testing.T) {
-	s2sError := errors.New("upstream failed")
-	cache := &recordingCache{}
-	api := &recordingS2S{err: s2sError}
-	result, err := newCachedTestEnricher(t, api, cache, &recordingEnrichmentMetrics{}, &recordingEnrichmentLogger{}, 10).Enrich(t.Context(), cacheableRequest())
-	if !errors.Is(err, s2sError) || !reflect.DeepEqual(result, Result{}) || len(cache.inProgress) != 1 || len(cache.resolved) != 0 || len(cache.negative) != 0 {
-		t.Fatalf("Enrich() = (%#v, %v), cache=%#v", result, err, cache)
+func TestEnrichRetriesS2SAfterFailedCacheMiss(t *testing.T) {
+	tests := []struct {
+		name       string
+		firstError error
+	}{
+		{name: "timeout", firstError: context.DeadlineExceeded},
+		{
+			name: "API error",
+			firstError: &iiqapi.Error{
+				Kind:   iiqapi.ErrorStatus,
+				Status: 503,
+				Err:    errors.New("resolution API returned 503"),
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cache := &retryCache{}
+			api := &recordingS2S{}
+			api.resolve = func(context.Context) (s2s.Response, error) {
+				if len(api.calls) == 1 {
+					return s2s.Response{}, test.firstError
+				}
+				return s2s.Response{Data: json.RawMessage(`{"eids":[{"source":"intentiq.com"}]}`)}, nil
+			}
+			enricher := newCachedTestEnricher(t, api, cache, &recordingEnrichmentMetrics{}, &recordingEnrichmentLogger{}, 10)
+
+			firstResult, err := enricher.Enrich(t.Context(), cacheableRequest())
+			if !errors.Is(err, test.firstError) || !reflect.DeepEqual(firstResult, Result{}) {
+				t.Fatalf("first Enrich() = (%#v, %v), want error %v", firstResult, err, test.firstError)
+			}
+			result, err := enricher.Enrich(t.Context(), cacheableRequest())
+			if err != nil || result.Outcome != OutcomeEnriched || len(api.calls) != 2 {
+				t.Fatalf("second Enrich() = (%#v, %v), S2S calls=%d", result, err, len(api.calls))
+			}
+			if len(cache.inProgress) != 2 || len(cache.cleared) != 1 || len(cache.resolved) != 1 {
+				t.Fatalf("cache writes: in-progress=%d cleared=%d resolved=%d", len(cache.inProgress), len(cache.cleared), len(cache.resolved))
+			}
+		})
 	}
 }

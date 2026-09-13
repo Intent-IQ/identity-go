@@ -129,6 +129,29 @@ func (cache *identityCache) PutInProgress(ctx context.Context, keys []enrichment
 	return nil
 }
 
+func (cache *identityCache) ClearInProgress(ctx context.Context, keys []enrichment.CacheKey) error {
+	var firstError error
+	for _, key := range keys {
+		localValue, localFound := cache.local.get(key.Value)
+		if localFound && !localValue.InProgress {
+			continue
+		}
+
+		storeValue, storeFound := cache.getFromStore(ctx, key.Value)
+		if storeFound && !storeValue.InProgress {
+			cache.local.delete(key.Value)
+			cache.promote(key.Value, storeValue)
+			continue
+		}
+
+		cache.local.delete(key.Value)
+		if err := cache.store.Delete(ctx, key.Value); err != nil && firstError == nil {
+			firstError = err
+		}
+	}
+	return firstError
+}
+
 func (cache *identityCache) backfill(ctx context.Context, keys []enrichment.CacheKey, hitIndex int, hit entry) {
 	remainingMilliseconds := hit.ExpiresAt - cache.clock.Now().UnixMilli()
 	if remainingMilliseconds <= 0 {

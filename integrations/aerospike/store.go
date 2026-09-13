@@ -20,6 +20,7 @@ const (
 type Client interface {
 	Get(policy *as.BasePolicy, key *as.Key, binNames ...string) (*as.Record, as.Error)
 	Put(policy *as.WritePolicy, key *as.Key, bins as.BinMap) as.Error
+	Delete(policy *as.WritePolicy, key *as.Key) (bool, as.Error)
 	Close()
 }
 
@@ -90,6 +91,15 @@ func (store *Store) Put(_ context.Context, key string, value []byte, ttl time.Du
 	policy := as.NewWritePolicy(0, expirationSeconds(ttl))
 	policy.RecordExistsAction = as.REPLACE
 	return store.client.Put(policy, aerospikeKey, as.BinMap{valueBin: string(value)})
+}
+
+func (store *Store) Delete(_ context.Context, key string) error {
+	aerospikeKey, err := as.NewKey(store.namespace, store.set, key)
+	if err != nil {
+		return err
+	}
+	_, aerospikeError := store.client.Delete(nil, aerospikeKey)
+	return aerospikeError
 }
 
 func clientPolicy(config ClientPolicy) *as.ClientPolicy {

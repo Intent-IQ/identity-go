@@ -58,4 +58,8 @@ func (store *Store) Put(ctx context.Context, key string, value []byte, ttl time.
 	return store.client.Do(ctx, set.Px(ttl).Build()).Error()
 }
 
+func (store *Store) Delete(ctx context.Context, key string) error {
+	return store.client.Do(ctx, store.client.B().Del().Key(key).Build()).Error()
+}
+
 var _ identitycache.Store = (*Store)(nil)

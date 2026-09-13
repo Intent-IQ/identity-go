@@ -10,6 +10,7 @@ type Cache interface {
 	PutResolved(context.Context, []CacheKey, Result) error
 	PutNegative(context.Context, []CacheKey, ResultMetadata) error
 	PutInProgress(context.Context, []CacheKey) error
+	ClearInProgress(context.Context, []CacheKey) error
 }
 
 type CacheState int
