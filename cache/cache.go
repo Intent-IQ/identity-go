@@ -113,14 +113,19 @@ func (cache *identityCache) PutNegative(ctx context.Context, keys []enrichment.C
 }
 
 func (cache *identityCache) PutInProgress(ctx context.Context, keys []enrichment.CacheKey, ttl time.Duration) error {
+	var firstErr error
+
 	for _, key := range keys {
 		encoded, err := cache.codec.encode(cache.codec.inProgress(ttl))
-		if err != nil {
-			continue
+		if err == nil {
+			err = cache.writeL2(ctx, key.Value, encoded, ttl)
 		}
-		cache.writeL2(ctx, key.Value, encoded, ttl)
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
 	}
-	return nil
+
+	return firstErr
 }
 
 func (cache *identityCache) backfill(ctx context.Context, keys []enrichment.CacheKey, hitIndex int, hit entry) {
@@ -172,19 +177,21 @@ func (cache *identityCache) writeBoth(ctx context.Context, key string, value ent
 		return
 	}
 	_ = cache.local.set(key, encoded, ttl)
-	cache.writeL2(ctx, key, encoded, ttl)
+	if err = cache.writeL2(ctx, key, encoded, ttl); err != nil {
+		cache.logger.Warn(fmt.Sprintf("identity cache L2 put failed: %v", err))
+	}
 }
 
-func (cache *identityCache) writeL2(ctx context.Context, key string, encoded []byte, ttl time.Duration) {
+func (cache *identityCache) writeL2(ctx context.Context, key string, encoded []byte, ttl time.Duration) error {
 	started := cache.clock.Now()
 	err := cache.store.Put(ctx, key, encoded, ttl)
 	cache.metrics.L2PutLatency(cache.clock.Now().Sub(started))
 	if err != nil {
 		cache.metrics.L2Request(OperationPut, ResultError)
-		cache.logger.Warn(fmt.Sprintf("identity cache L2 put failed: %v", err))
-		return
+		return err
 	}
 	cache.metrics.L2Request(OperationPut, ResultStored)
+	return nil
 }
 
 func (cache *identityCache) getFromStore(ctx context.Context, key string) (entry, bool) {

@@ -436,6 +436,11 @@ func TestIdentityCacheStoreErrorsFailOpenAndAreObservable(t *testing.T) {
 	store.putErr = errTestStore
 	store.onPut = func() { clock.advance(7 * time.Millisecond) }
 	metrics.events = nil
+	if err := cache.PutInProgress(t.Context(), []enrichment.CacheKey{{Value: "marker", Type: enrichment.CacheKeyFirstParty}}, time.Second); !errors.Is(err, errTestStore) {
+		t.Fatalf("PutInProgress() error = %v, want %v", err, errTestStore)
+	}
+	metrics.events = nil
+	metrics.putLatencies = nil
 	if err := cache.PutResolved(t.Context(), []enrichment.CacheKey{{Value: "local", Type: enrichment.CacheKeyFirstParty}}, enrichment.Result{EIDs: []openrtb2.EID{{Source: "a.com"}}}); err != nil {
 		t.Fatalf("PutResolved() error = %v", err)
 	}
