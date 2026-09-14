@@ -144,7 +144,6 @@ func testCacheConfig() Config {
 		TTLCeilingThirdPartySeconds: 600,
 		TTLCeilingDeviceSeconds:     300,
 		NegativeTTLSeconds:          120,
-		InProgressTTLSeconds:        15,
 	}
 }
 
@@ -287,7 +286,7 @@ func TestIdentityCacheAliasBackfillUsesUncappedRemainingTTL(t *testing.T) {
 }
 
 func TestIdentityCacheNegativeAndInProgress(t *testing.T) {
-	cache, store, _, _, _ := newTestIdentityCache(t)
+	cache, store, _, _, clock := newTestIdentityCache(t)
 	negativeKey := enrichment.CacheKey{Value: "negative", Type: enrichment.CacheKeyThirdParty}
 	metadata := enrichment.ResultMetadata{CacheTTL: 30 * time.Second, ABTestUUID: "ab-2", TerminationCause: int64Pointer(8)}
 	_ = cache.PutNegative(t.Context(), []enrichment.CacheKey{negativeKey}, metadata)
@@ -301,22 +300,34 @@ func TestIdentityCacheNegativeAndInProgress(t *testing.T) {
 	}
 
 	inProgressKey := enrichment.CacheKey{Value: "in-progress", Type: enrichment.CacheKeyDevice}
-	_ = cache.PutInProgress(t.Context(), []enrichment.CacheKey{inProgressKey})
+	_ = cache.PutInProgress(t.Context(), []enrichment.CacheKey{inProgressKey}, 15*time.Second)
 	stored, _ = store.stored(inProgressKey.Value)
 	if stored.ttl != 15*time.Second {
 		t.Fatalf("in-progress TTL = %v, want 15s", stored.ttl)
 	}
+	if _, found := cache.local.get(inProgressKey.Value); found {
+		t.Fatal("in-progress marker was stored in L1")
+	}
 	inProgress, _ := cache.Get(t.Context(), []enrichment.CacheKey{inProgressKey})
-	if inProgress.State != enrichment.CacheInProgress || inProgress.Layer != enrichment.CacheLayerL1 || inProgress.KeyType != enrichment.CacheKeyDevice {
+	if inProgress.State != enrichment.CacheInProgress || inProgress.Layer != enrichment.CacheLayerL2 || inProgress.KeyType != enrichment.CacheKeyDevice {
 		t.Fatalf("in-progress result = %#v", inProgress)
+	}
+	if _, found := cache.local.get(inProgressKey.Value); found {
+		t.Fatal("L2 in-progress marker was promoted to L1")
+	}
+
+	clock.advance(15 * time.Second)
+	expired, _ := cache.Get(t.Context(), []enrichment.CacheKey{inProgressKey})
+	if expired.State != enrichment.CacheMiss {
+		t.Fatalf("expired in-progress result = %#v, want cache miss", expired)
 	}
 }
 
-func TestIdentityCacheResolvedWinsOverEarlierInProgressWithinLayer(t *testing.T) {
+func TestIdentityCacheResolvedL1WinsOverInProgressL2(t *testing.T) {
 	cache, _, _, _, _ := newTestIdentityCache(t)
 	inProgress := enrichment.CacheKey{Value: "ip", Type: enrichment.CacheKeyFirstParty}
 	resolved := enrichment.CacheKey{Value: "resolved", Type: enrichment.CacheKeyThirdParty}
-	_ = cache.PutInProgress(t.Context(), []enrichment.CacheKey{inProgress})
+	_ = cache.PutInProgress(t.Context(), []enrichment.CacheKey{inProgress}, 15*time.Second)
 	_ = cache.PutResolved(t.Context(), []enrichment.CacheKey{resolved}, enrichment.Result{EIDs: []openrtb2.EID{{Source: "a.com"}}})
 
 	result, _ := cache.Get(t.Context(), []enrichment.CacheKey{inProgress, resolved})
@@ -341,22 +352,26 @@ func TestIdentityCacheResolvedL2EntryWinsOverEarlierL2InProgress(t *testing.T) {
 	if result.State != enrichment.CacheHit || result.Layer != enrichment.CacheLayerL2 || result.KeyType != enrichment.CacheKeyThirdParty {
 		t.Fatalf("Get() = %#v, want resolved L2 second key", result)
 	}
-	assertMetricEvents(t, metrics.events, []metricEvent{{OperationGet, ResultHit}, {OperationGet, ResultHit}})
+	assertMetricEvents(t, metrics.events, []metricEvent{
+		{OperationGet, ResultHit},
+		{OperationGet, ResultHit},
+		{OperationPut, ResultStored},
+	})
 }
 
-func TestIdentityCacheL1InProgressShortCircuitsL2(t *testing.T) {
+func TestIdentityCacheIgnoresLegacyL1InProgressMarker(t *testing.T) {
 	cache, store, _, _, _ := newTestIdentityCache(t)
 	inProgress := enrichment.CacheKey{Value: "ip", Type: enrichment.CacheKeyFirstParty}
 	resolved := enrichment.CacheKey{Value: "resolved", Type: enrichment.CacheKeyThirdParty}
-	_ = cache.PutInProgress(t.Context(), []enrichment.CacheKey{inProgress})
+	marker, _ := cache.codec.encode(cache.codec.inProgress(15 * time.Second))
+	_ = cache.local.set(inProgress.Value, marker, 15*time.Second)
 	value := cache.codec.resolved(enrichment.Result{EIDs: []openrtb2.EID{{Source: "a.com"}}}, time.Minute)
 	encoded, _ := cache.codec.encode(value)
 	_ = store.Put(t.Context(), resolved.Value, encoded, time.Minute)
-	before := store.getCount()
 
 	result, _ := cache.Get(t.Context(), []enrichment.CacheKey{inProgress, resolved})
-	if result.State != enrichment.CacheInProgress || result.Layer != enrichment.CacheLayerL1 || store.getCount() != before {
-		t.Fatalf("Get() = %#v, Store.Get count=%d, want L1 in-progress without L2 lookup", result, store.getCount())
+	if result.State != enrichment.CacheHit || result.Layer != enrichment.CacheLayerL2 || result.KeyType != enrichment.CacheKeyThirdParty {
+		t.Fatalf("Get() = %#v, want resolved L2 result", result)
 	}
 }
 
@@ -421,6 +436,11 @@ func TestIdentityCacheStoreErrorsFailOpenAndAreObservable(t *testing.T) {
 	store.putErr = errTestStore
 	store.onPut = func() { clock.advance(7 * time.Millisecond) }
 	metrics.events = nil
+	if err := cache.PutInProgress(t.Context(), []enrichment.CacheKey{{Value: "marker", Type: enrichment.CacheKeyFirstParty}}, time.Second); !errors.Is(err, errTestStore) {
+		t.Fatalf("PutInProgress() error = %v, want %v", err, errTestStore)
+	}
+	metrics.events = nil
+	metrics.putLatencies = nil
 	if err := cache.PutResolved(t.Context(), []enrichment.CacheKey{{Value: "local", Type: enrichment.CacheKeyFirstParty}}, enrichment.Result{EIDs: []openrtb2.EID{{Source: "a.com"}}}); err != nil {
 		t.Fatalf("PutResolved() error = %v", err)
 	}
