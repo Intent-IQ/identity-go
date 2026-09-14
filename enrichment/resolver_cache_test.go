@@ -19,11 +19,11 @@ type recordingCache struct {
 	getErr error
 	putErr error
 
-	gets       [][]CacheKey
-	resolved   []cacheResolvedCall
-	negative   []cacheNegativeCall
-	inProgress [][]CacheKey
-	cleared    [][]CacheKey
+	gets           [][]CacheKey
+	resolved       []cacheResolvedCall
+	negative       []cacheNegativeCall
+	inProgress     [][]CacheKey
+	inProgressTTLs []time.Duration
 }
 
 type cacheResolvedCall struct {
@@ -36,27 +36,23 @@ type cacheNegativeCall struct {
 	metadata ResultMetadata
 }
 
-type retryCache struct {
+type expiringMarkerCache struct {
 	recordingCache
-	inProgressSet bool
+	now       time.Time
+	expiresAt time.Time
 }
 
-func (cache *retryCache) Get(ctx context.Context, keys []CacheKey) (CacheResult, error) {
+func (cache *expiringMarkerCache) Get(_ context.Context, keys []CacheKey) (CacheResult, error) {
 	cache.gets = append(cache.gets, cloneCacheKeys(keys))
-	if cache.inProgressSet {
-		return CacheResult{State: CacheInProgress, Layer: CacheLayerL1}, nil
+	if cache.now.Before(cache.expiresAt) {
+		return CacheResult{State: CacheInProgress, Layer: CacheLayerL2}, nil
 	}
 	return CacheResult{State: CacheMiss, Layer: CacheLayerNone}, nil
 }
 
-func (cache *retryCache) PutInProgress(ctx context.Context, keys []CacheKey) error {
-	cache.inProgressSet = true
-	return cache.recordingCache.PutInProgress(ctx, keys)
-}
-
-func (cache *retryCache) ClearInProgress(ctx context.Context, keys []CacheKey) error {
-	cache.inProgressSet = false
-	return cache.recordingCache.ClearInProgress(ctx, keys)
+func (cache *expiringMarkerCache) PutInProgress(ctx context.Context, keys []CacheKey, ttl time.Duration) error {
+	cache.expiresAt = cache.now.Add(ttl)
+	return cache.recordingCache.PutInProgress(ctx, keys, ttl)
 }
 
 func (cache *recordingCache) Get(_ context.Context, keys []CacheKey) (CacheResult, error) {
@@ -74,13 +70,9 @@ func (cache *recordingCache) PutNegative(_ context.Context, keys []CacheKey, met
 	return cache.putErr
 }
 
-func (cache *recordingCache) PutInProgress(_ context.Context, keys []CacheKey) error {
+func (cache *recordingCache) PutInProgress(_ context.Context, keys []CacheKey, ttl time.Duration) error {
 	cache.inProgress = append(cache.inProgress, cloneCacheKeys(keys))
-	return cache.putErr
-}
-
-func (cache *recordingCache) ClearInProgress(_ context.Context, keys []CacheKey) error {
-	cache.cleared = append(cache.cleared, cloneCacheKeys(keys))
+	cache.inProgressTTLs = append(cache.inProgressTTLs, ttl)
 	return cache.putErr
 }
 
@@ -285,25 +277,33 @@ func TestEnrichCacheFailuresRemainFailOpen(t *testing.T) {
 	})
 }
 
-func TestEnrichRetriesS2SAfterFailedCacheMiss(t *testing.T) {
+func TestEnrichS2SErrorUsesRequestTimeoutForInProgressMarker(t *testing.T) {
+	s2sError := errors.New("upstream failed")
+	cache := &recordingCache{}
+	api := &recordingS2S{err: s2sError}
+	request := cacheableRequest()
+	request.Timeout = 750 * time.Millisecond
+	result, err := newCachedTestEnricher(t, api, cache, &recordingEnrichmentMetrics{}, &recordingEnrichmentLogger{}, 10).Enrich(t.Context(), request)
+	if !errors.Is(err, s2sError) || !reflect.DeepEqual(result, Result{}) || len(cache.inProgress) != 1 || len(cache.resolved) != 0 || len(cache.negative) != 0 {
+		t.Fatalf("Enrich() = (%#v, %v), cache=%#v", result, err, cache)
+	}
+	if !reflect.DeepEqual(cache.inProgressTTLs, []time.Duration{request.Timeout}) {
+		t.Fatalf("in-progress TTLs = %v, want [%v]", cache.inProgressTTLs, request.Timeout)
+	}
+}
+
+func TestEnrichRetriesAfterErrorMarkerExpires(t *testing.T) {
 	tests := []struct {
 		name       string
 		firstError error
 	}{
 		{name: "timeout", firstError: context.DeadlineExceeded},
-		{
-			name: "API error",
-			firstError: &iiqapi.Error{
-				Kind:   iiqapi.ErrorStatus,
-				Status: 503,
-				Err:    errors.New("resolution API returned 503"),
-			},
-		},
+		{name: "API error", firstError: &iiqapi.Error{Kind: iiqapi.ErrorStatus, Status: 503}},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			cache := &retryCache{}
+			cache := &expiringMarkerCache{now: time.Unix(1_700_000_000, 0)}
 			api := &recordingS2S{}
 			api.resolve = func(context.Context) (s2s.Response, error) {
 				if len(api.calls) == 1 {
@@ -311,18 +311,20 @@ func TestEnrichRetriesS2SAfterFailedCacheMiss(t *testing.T) {
 				}
 				return s2s.Response{Data: json.RawMessage(`{"eids":[{"source":"intentiq.com"}]}`)}, nil
 			}
+			request := cacheableRequest()
 			enricher := newCachedTestEnricher(t, api, cache, &recordingEnrichmentMetrics{}, &recordingEnrichmentLogger{}, 10)
 
-			firstResult, err := enricher.Enrich(t.Context(), cacheableRequest())
-			if !errors.Is(err, test.firstError) || !reflect.DeepEqual(firstResult, Result{}) {
-				t.Fatalf("first Enrich() = (%#v, %v), want error %v", firstResult, err, test.firstError)
+			if result, err := enricher.Enrich(t.Context(), request); !errors.Is(err, test.firstError) || !reflect.DeepEqual(result, Result{}) {
+				t.Fatalf("first Enrich() = (%#v, %v), want error %v", result, err, test.firstError)
 			}
-			result, err := enricher.Enrich(t.Context(), cacheableRequest())
-			if err != nil || result.Outcome != OutcomeEnriched || len(api.calls) != 2 {
+			if result, err := enricher.Enrich(t.Context(), request); err != nil || result.Outcome != OutcomeInProgress || len(api.calls) != 1 {
 				t.Fatalf("second Enrich() = (%#v, %v), S2S calls=%d", result, err, len(api.calls))
 			}
-			if len(cache.inProgress) != 2 || len(cache.cleared) != 1 || len(cache.resolved) != 1 {
-				t.Fatalf("cache writes: in-progress=%d cleared=%d resolved=%d", len(cache.inProgress), len(cache.cleared), len(cache.resolved))
+
+			cache.now = cache.now.Add(request.Timeout)
+			result, err := enricher.Enrich(t.Context(), request)
+			if err != nil || result.Outcome != OutcomeEnriched || len(api.calls) != 2 || len(cache.resolved) != 1 {
+				t.Fatalf("third Enrich() = (%#v, %v), S2S calls=%d resolved writes=%d", result, err, len(api.calls), len(cache.resolved))
 			}
 		})
 	}

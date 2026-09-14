@@ -12,7 +12,6 @@ type Config struct {
 	TTLCeilingThirdPartySeconds int    `json:"ttl_ceiling_third_party_seconds" yaml:"ttl_ceiling_third_party_seconds"`
 	TTLCeilingDeviceSeconds     int    `json:"ttl_ceiling_device_seconds" yaml:"ttl_ceiling_device_seconds"`
 	NegativeTTLSeconds          int    `json:"negative_ttl_seconds" yaml:"negative_ttl_seconds"`
-	InProgressTTLSeconds        int    `json:"in_progress_ttl_seconds" yaml:"in_progress_ttl_seconds"`
 }
 
 func (config Config) TTLPolicy() TTLPolicy {
@@ -23,6 +22,5 @@ func (config Config) TTLPolicy() TTLPolicy {
 		ThirdPartyCeiling: seconds(config.TTLCeilingThirdPartySeconds),
 		DeviceCeiling:     seconds(config.TTLCeilingDeviceSeconds),
 		NegativeTTL:       seconds(config.NegativeTTLSeconds),
-		InProgressTTL:     seconds(config.InProgressTTLSeconds),
 	}
 }

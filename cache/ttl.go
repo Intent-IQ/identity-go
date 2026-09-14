@@ -13,7 +13,6 @@ type TTLPolicy struct {
 	ThirdPartyCeiling time.Duration
 	DeviceCeiling     time.Duration
 	NegativeTTL       time.Duration
-	InProgressTTL     time.Duration
 }
 
 func (policy TTLPolicy) CeilingFor(keyType enrichment.CacheKeyType) time.Duration {

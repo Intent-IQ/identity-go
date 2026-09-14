@@ -57,8 +57,4 @@ func (store *Store) Put(ctx context.Context, key string, value []byte, ttl time.
 	return store.client.Set(ctx, key, value, ttl).Err()
 }
 
-func (store *Store) Delete(ctx context.Context, key string) error {
-	return store.client.Del(ctx, key).Err()
-}
-
 var _ identitycache.Store = (*Store)(nil)

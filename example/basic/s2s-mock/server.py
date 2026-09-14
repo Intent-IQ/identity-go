@@ -17,7 +17,7 @@ BODY = json.dumps({
     },
     "tc": 0,
     "abTestUuid": "local-dev",
-    "cttl": 3600,
+    "cttl": 3_600_000,
 }).encode()
 
 

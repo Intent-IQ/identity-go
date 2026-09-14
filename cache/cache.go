@@ -59,25 +59,17 @@ func (cache *identityCache) Get(ctx context.Context, keys []enrichment.CacheKey)
 		return missResult(), nil
 	}
 
-	var inProgressKeyType enrichment.CacheKeyType
-	inProgressFound := false
 	for index, key := range keys {
 		value, found := cache.local.get(key.Value)
 		if !found {
 			continue
 		}
 		if value.InProgress {
-			if !inProgressFound {
-				inProgressKeyType = key.Type
-				inProgressFound = true
-			}
+			// In-progress markers are L2-only
 			continue
 		}
 		cache.backfill(ctx, keys, index, value)
 		return cacheResultFromEntry(value, key.Type, enrichment.CacheLayerL1), nil
-	}
-	if inProgressFound {
-		return inProgressResult(inProgressKeyType, enrichment.CacheLayerL1), nil
 	}
 
 	var l2InProgressKeyType enrichment.CacheKeyType
@@ -89,7 +81,6 @@ func (cache *identityCache) Get(ctx context.Context, keys []enrichment.CacheKey)
 		}
 		if value.InProgress {
 			if !l2InProgressFound {
-				cache.promote(key.Value, value)
 				l2InProgressKeyType = key.Type
 				l2InProgressFound = true
 			}
@@ -121,35 +112,15 @@ func (cache *identityCache) PutNegative(ctx context.Context, keys []enrichment.C
 	return nil
 }
 
-func (cache *identityCache) PutInProgress(ctx context.Context, keys []enrichment.CacheKey) error {
-	ttl := cache.policy.InProgressTTL
+func (cache *identityCache) PutInProgress(ctx context.Context, keys []enrichment.CacheKey, ttl time.Duration) error {
 	for _, key := range keys {
-		cache.writeBoth(ctx, key.Value, cache.codec.inProgress(ttl), ttl)
+		encoded, err := cache.codec.encode(cache.codec.inProgress(ttl))
+		if err != nil {
+			continue
+		}
+		cache.writeL2(ctx, key.Value, encoded, ttl)
 	}
 	return nil
-}
-
-func (cache *identityCache) ClearInProgress(ctx context.Context, keys []enrichment.CacheKey) error {
-	var firstError error
-	for _, key := range keys {
-		localValue, localFound := cache.local.get(key.Value)
-		if localFound && !localValue.InProgress {
-			continue
-		}
-
-		storeValue, storeFound := cache.getFromStore(ctx, key.Value)
-		if storeFound && !storeValue.InProgress {
-			cache.local.delete(key.Value)
-			cache.promote(key.Value, storeValue)
-			continue
-		}
-
-		cache.local.delete(key.Value)
-		if err := cache.store.Delete(ctx, key.Value); err != nil && firstError == nil {
-			firstError = err
-		}
-	}
-	return firstError
 }
 
 func (cache *identityCache) backfill(ctx context.Context, keys []enrichment.CacheKey, hitIndex int, hit entry) {
@@ -201,9 +172,12 @@ func (cache *identityCache) writeBoth(ctx context.Context, key string, value ent
 		return
 	}
 	_ = cache.local.set(key, encoded, ttl)
+	cache.writeL2(ctx, key, encoded, ttl)
+}
 
+func (cache *identityCache) writeL2(ctx context.Context, key string, encoded []byte, ttl time.Duration) {
 	started := cache.clock.Now()
-	err = cache.store.Put(ctx, key, encoded, ttl)
+	err := cache.store.Put(ctx, key, encoded, ttl)
 	cache.metrics.L2PutLatency(cache.clock.Now().Sub(started))
 	if err != nil {
 		cache.metrics.L2Request(OperationPut, ResultError)
