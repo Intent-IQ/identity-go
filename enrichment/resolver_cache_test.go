@@ -187,8 +187,9 @@ func TestEnrichHandlesEveryCacheState(t *testing.T) {
 			if test.cached.State != CacheInProgress && (result.ABTestUUID != test.cached.Result.ABTestUUID || result.TerminationCause != test.cached.Result.TerminationCause) {
 				t.Fatalf("cached metadata not preserved: %#v", result)
 			}
-			if !result.FromCache {
-				t.Fatalf("FromCache = false for cache state %q", test.cached.State.Token())
+			if result.CacheLayer != test.cached.Layer {
+				t.Fatalf("CacheLayer = %q for cache state %q, want %q",
+					result.CacheLayer.Token(), test.cached.State.Token(), test.cached.Layer.Token())
 			}
 			assertEnrichmentMetricNames(t, metrics.events, "request", "cache_lookup", test.wantMetricEnd)
 			if metrics.events[1].lookup != test.wantLookup || metrics.events[1].layer != test.cached.Layer {
@@ -211,7 +212,7 @@ func TestEnrichCacheMissStoresPositiveResult(t *testing.T) {
 	cache := &recordingCache{result: CacheResult{State: CacheMiss, Layer: CacheLayerNone}}
 	metrics := &recordingEnrichmentMetrics{}
 	result, err := newCachedTestEnricher(t, api, cache, metrics, &recordingEnrichmentLogger{}, 1).Enrich(t.Context(), cacheableRequest())
-	if err != nil || result.Outcome != OutcomeEnriched || result.FromCache || len(api.calls) != 1 {
+	if err != nil || result.Outcome != OutcomeEnriched || result.CacheLayer != CacheLayerNone || len(api.calls) != 1 {
 		t.Fatalf("Enrich() = (%#v, %v), API calls=%d", result, err, len(api.calls))
 	}
 	wantKeys := []CacheKey{{Value: "pubcid:shared", Type: CacheKeyFirstParty}}

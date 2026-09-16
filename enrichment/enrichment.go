@@ -37,6 +37,11 @@ type Result struct {
 	ABTestUUID       string
 	TerminationCause *int64
 	Outcome          Outcome
-	// FromCache reports that the result was served from cache rather than the resolution API.
-	FromCache bool
+	// CacheLayer reports which layer served the result
+	CacheLayer CacheLayer
+}
+
+// FromCache reports whether a cache layer served the result rather than the resolution API.
+func (result Result) FromCache() bool {
+	return result.CacheLayer != CacheLayerNone
 }
