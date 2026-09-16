@@ -71,6 +71,7 @@ func (enricher *enricher) Enrich(ctx context.Context, input Request) (Result, er
 		enricher.metrics.CacheLookup(input.PartnerID, CacheLookupHit, cached.Layer)
 		result := cached.Result
 		result.Outcome = OutcomeEnriched
+		result.FromCache = true
 		enricher.metrics.Enriched(input.PartnerID)
 		return result, nil
 	case CacheNegative:
@@ -78,12 +79,13 @@ func (enricher *enricher) Enrich(ctx context.Context, input Request) (Result, er
 		result := cached.Result
 		result.EIDs = nil
 		result.Outcome = OutcomeCachedNoIDs
+		result.FromCache = true
 		enricher.metrics.NotEnriched(input.PartnerID, ReasonNoIDsCached)
 		return result, nil
 	case CacheInProgress:
 		enricher.metrics.CacheLookup(input.PartnerID, CacheLookupMiss, cached.Layer)
 		enricher.metrics.NotEnriched(input.PartnerID, ReasonInProgress)
-		return Result{Outcome: OutcomeInProgress}, nil
+		return Result{Outcome: OutcomeInProgress, FromCache: true}, nil
 	default:
 		enricher.metrics.CacheLookup(input.PartnerID, CacheLookupMiss, cached.Layer)
 		if err := enricher.cache.PutInProgress(ctx, keys, input.Timeout); err != nil {

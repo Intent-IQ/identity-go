@@ -37,4 +37,6 @@ type Result struct {
 	ABTestUUID       string
 	TerminationCause *int64
 	Outcome          Outcome
+	// FromCache reports that the result was served from cache rather than the resolution API.
+	FromCache bool
 }
