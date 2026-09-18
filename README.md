@@ -96,11 +96,13 @@ Architecture and compatibility requirements are documented in [`docs`](docs/), s
 
 ## Development
 
-Run the core checks from the repository root:
+Run a fast smoke check or the complete validation suite from the repository root:
 
 ```bash
-go test ./...
-go vet ./...
+make smoke
+make check
 ```
 
-Each directory under `integrations/` and `example/` with its own `go.mod` is tested independently.
+Run `make help` to list build, test, race, formatting, and dependency-management
+commands. The full checks cover the root module and every independent module under
+`integrations/` and `example/`.
