@@ -95,6 +95,12 @@ func (enricher *enricher) Enrich(ctx context.Context, input Request) (Result, er
 	if err != nil {
 		return Result{}, err
 	}
+
+	// An empty S2S response is inconclusive. Do not turn it into a negative cache
+	// entry, so another request can retry after the in-progress marker expires.
+	if result.Outcome == OutcomeUnresolved {
+		return result, nil
+	}
 	if len(result.EIDs) > 0 {
 		if err := enricher.cache.PutResolved(ctx, keys, result); err != nil {
 			enricher.logger.Warn(fmt.Sprintf("identity enrichment cache resolved write failed: %v", err))
@@ -133,6 +139,11 @@ func (enricher *enricher) resolve(ctx context.Context, input Request) (Result, e
 	}
 
 	enricher.metrics.APISuccess(input.PartnerID)
+	if response.EmptyBody {
+		enricher.metrics.NotEnriched(input.PartnerID, ReasonUnresolved)
+		return Result{Outcome: OutcomeUnresolved}, nil
+	}
+
 	result := Result{
 		EIDs:             response.EIDs(),
 		CacheTTL:         response.TTL(),

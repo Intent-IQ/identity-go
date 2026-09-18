@@ -176,6 +176,9 @@ func TestResolveEmptyBodyIsNoResult(t *testing.T) {
 			if result.Status != http.StatusOK {
 				t.Fatalf("status = %d, want %d", result.Status, http.StatusOK)
 			}
+			if !result.EmptyBody {
+				t.Fatal("EmptyBody = false, want true")
+			}
 			if len(result.EIDs()) != 0 {
 				t.Fatalf("EIDs() = %d, want 0", len(result.EIDs()))
 			}

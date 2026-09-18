@@ -27,8 +27,13 @@ const (
 	OutcomeEnriched    Outcome = "enriched"
 	OutcomeNoIDs       Outcome = "no_ids"
 	OutcomeCachedNoIDs Outcome = "no_ids_cached"
-	OutcomeInProgress  Outcome = "in_progress"
-	OutcomeNoEndpoint  Outcome = "no_endpoint"
+
+	// OutcomeUnresolved represents a successful S2S response with an empty body.
+	// It remains distinct from OutcomeNoIDs because it must not be negatively cached.
+	OutcomeUnresolved Outcome = "unresolved"
+
+	OutcomeInProgress Outcome = "in_progress"
+	OutcomeNoEndpoint Outcome = "no_endpoint"
 )
 
 type Result struct {

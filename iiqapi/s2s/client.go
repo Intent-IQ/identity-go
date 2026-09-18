@@ -59,7 +59,7 @@ func (c *Client) Resolve(ctx context.Context, requestURL, consent string) (Respo
 	// The S2S client may return 200 with an empty body.
 	// Treat it as a valid response with no IDs instead of failing to parse it.
 	if len(bytes.TrimSpace(body)) == 0 {
-		return Response{Status: resp.StatusCode}, nil
+		return Response{Status: resp.StatusCode, EmptyBody: true}, nil
 	}
 	var result Response
 	if err := json.Unmarshal(body, &result); err != nil {
