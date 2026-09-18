@@ -19,6 +19,12 @@ go run . -config config.yaml
 
 The first enrichment resolves through S2S and writes the result to Valkey. The second enrichment uses the cached result. The example then queues one impression report and waits for it only so the short-lived process does not exit first.
 
+To build the example from the repository root:
+
+```bash
+make build-basic
+```
+
 To inspect the received report:
 
 ```bash
