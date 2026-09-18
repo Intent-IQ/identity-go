@@ -30,3 +30,22 @@ func TestCacheModelTokens(t *testing.T) {
 		})
 	}
 }
+
+func TestResultFromCache(t *testing.T) {
+	tests := []struct {
+		name  string
+		layer CacheLayer
+		want  bool
+	}{
+		{"resolution API", CacheLayerNone, false},
+		{"l1", CacheLayerL1, true},
+		{"l2", CacheLayerL2, true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := (Result{CacheLayer: test.layer}).FromCache(); got != test.want {
+				t.Fatalf("FromCache() = %t for layer %q, want %t", got, test.layer.Token(), test.want)
+			}
+		})
+	}
+}
