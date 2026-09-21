@@ -198,6 +198,27 @@ func TestEnrichTreatsNilCacheAsDisabled(t *testing.T) {
 	assertEnrichmentMetricNames(t, metrics.events, "request", "api_duration", "api_success", "not_enriched")
 }
 
+func TestEnrichRejectsNonSyncRequestWithoutCacheKeys(t *testing.T) {
+	api := &recordingS2S{}
+	cache := &recordingCache{}
+	request := cacheableRequest()
+	request.Auction = &openrtb2.BidRequest{}
+	wait := time.Duration(0)
+	request.WaitTimeout = &wait
+
+	result, err := newCachedTestEnricher(
+		t, api, cache, &recordingEnrichmentMetrics{}, &recordingEnrichmentLogger{}, 10,
+	).Enrich(t.Context(), request)
+
+	if !errors.Is(err, errNonSyncCacheKeysRequired) || !reflect.DeepEqual(result, Result{}) {
+		t.Fatalf("Enrich() = (%#v, %v), want missing-cache-keys error", result, err)
+	}
+	if len(api.calls) != 0 || len(cache.gets) != 0 || len(cache.inProgress) != 0 {
+		t.Fatalf("rejected request performed work: API calls=%d cache gets=%d markers=%d",
+			len(api.calls), len(cache.gets), len(cache.inProgress))
+	}
+}
+
 func TestEnrichHandlesEveryCacheState(t *testing.T) {
 	terminationCause := int64(120088)
 	tests := []struct {
@@ -441,8 +462,8 @@ func TestCacheWriteSurvivesACallThatSpentTheWholeTimeout(t *testing.T) {
 	request.Timeout = 50 * time.Millisecond
 	keys := []CacheKey{{Value: "pubcid:shared", Type: CacheKeyFirstParty}}
 
-	if _, err := enricher.execute(t.Context(), request, keys, nil); err != nil {
-		t.Fatalf("execute() error = %v", err)
+	if _, err := enricher.run(t.Context(), newResolutionJob(request, keys)); err != nil {
+		t.Fatalf("run() error = %v", err)
 	}
 
 	if len(cache.resolved) != 1 || cache.resolvedCtxErr != nil {
@@ -496,8 +517,12 @@ func TestExecuteDetachedFromCallerThroughCacheWrite(t *testing.T) {
 				err    error
 			}
 			finished := make(chan executionResult, 1)
+			plan, err := enricher.planRequest(request)
+			if err != nil {
+				t.Fatalf("planRequest() error = %v", err)
+			}
 			go func() {
-				result, err := enricher.execute(parent, request, keys, nil)
+				result, err := enricher.schedule(parent, plan, newResolutionJob(request, keys), false)
 				finished <- executionResult{result: result, err: err}
 			}()
 
@@ -526,7 +551,7 @@ func TestPreparedResolutionDoesNotRetainAuctionOrKeySlice(t *testing.T) {
 	request := cacheableRequest()
 	request.Auction.User.Consent = "original-consent"
 	keys := []CacheKey{{Value: "pubcid:original", Type: CacheKeyFirstParty}}
-	prepared := prepareResolution(request, keys)
+	job := newResolutionJob(request, keys)
 
 	request.Auction.User.Consent = "mutated-consent"
 	request.Auction.User.EIDs[0].UIDs[0].ID = "mutated"
@@ -538,9 +563,9 @@ func TestPreparedResolutionDoesNotRetainAuctionOrKeySlice(t *testing.T) {
 	)}}
 	cache := &recordingCache{}
 	enricher := newCachedTestEnricher(t, api, cache, &recordingEnrichmentMetrics{}, &recordingEnrichmentLogger{}, 10).(*enricher)
-	result, err := enricher.executePrepared(t.Context(), prepared)
+	result, err := enricher.run(t.Context(), job)
 	if err != nil || result.Outcome != OutcomeEnriched {
-		t.Fatalf("executePrepared() = (%#v, %v)", result, err)
+		t.Fatalf("run() = (%#v, %v)", result, err)
 	}
 	if len(api.calls) != 1 || api.calls[0].consent != "original-consent" || strings.Contains(api.calls[0].requestURL, "mutated") || strings.Contains(api.calls[0].requestURL, "203.0.113.10") {
 		t.Fatalf("prepared API call changed after auction mutation: %#v", api.calls)
