@@ -1,18 +1,8 @@
 package enrichment
 
-type backgroundLimiter interface {
-	TryAcquire() bool
-	Release()
-}
+type s2sLimiter chan struct{}
 
-type unlimitedBackgroundLimiter struct{}
-
-func (unlimitedBackgroundLimiter) TryAcquire() bool { return true }
-func (unlimitedBackgroundLimiter) Release()         {}
-
-type boundedBackgroundLimiter chan struct{}
-
-func (limiter boundedBackgroundLimiter) TryAcquire() bool {
+func (limiter s2sLimiter) TryAcquire() bool {
 	select {
 	case limiter <- struct{}{}:
 		return true
@@ -21,13 +11,13 @@ func (limiter boundedBackgroundLimiter) TryAcquire() bool {
 	}
 }
 
-func (limiter boundedBackgroundLimiter) Release() {
+func (limiter s2sLimiter) Release() {
 	<-limiter
 }
 
-func newBackgroundLimiter(maximum int) backgroundLimiter {
+func newS2SLimiter(maximum int) s2sLimiter {
 	if maximum <= 0 {
-		return unlimitedBackgroundLimiter{}
+		return nil
 	}
-	return make(boundedBackgroundLimiter, maximum)
+	return make(s2sLimiter, maximum)
 }

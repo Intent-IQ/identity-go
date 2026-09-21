@@ -66,8 +66,13 @@ func (config Config) validate() error {
 	if config.MaxBackgroundS2SCalls < 0 {
 		return fmt.Errorf("max_background_s2s_calls must not be negative")
 	}
-	if config.WaitTimeout != nil && *config.WaitTimeout < config.Timeout && !config.Cache.Enabled {
-		return fmt.Errorf("cache must be enabled when wait_timeout is less than timeout")
+	if config.WaitTimeout != nil && *config.WaitTimeout < config.Timeout {
+		if !config.Cache.Enabled {
+			return fmt.Errorf("cache must be enabled when wait_timeout is less than timeout")
+		}
+		if config.MaxBackgroundS2SCalls == 0 {
+			return fmt.Errorf("max_background_s2s_calls must be positive when wait_timeout is less than timeout")
+		}
 	}
 	return nil
 }

@@ -142,7 +142,9 @@ func newCachedTestEnricher(
 	maxKeys int,
 ) Enricher {
 	t.Helper()
-	created, err := New(Dependencies{S2S: api, Cache: cache, Metrics: metrics, Logger: logger}, maxKeys)
+	created, err := New(Dependencies{
+		S2S: api, Cache: cache, Metrics: metrics, Logger: logger, MaxBackgroundS2SCalls: 10,
+	}, maxKeys)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -613,9 +615,9 @@ func TestEnrichHybridCompletesOnEitherSideOfWait(t *testing.T) {
 		api := &recordingS2S{response: s2s.Response{Data: json.RawMessage(
 			`{"eids":[{"source":"intentiq.com","uids":[{"id":"resolved"}]}]}`,
 		)}}
-		enricher := newTestEnricher(t, api, &recordingEnrichmentMetrics{}, &recordingEnrichmentLogger{})
+		cache := &recordingCache{result: CacheResult{State: CacheMiss}}
+		enricher := newCachedTestEnricher(t, api, cache, &recordingEnrichmentMetrics{}, &recordingEnrichmentLogger{}, 10)
 		request := cacheableRequest()
-		request.CacheEnabled = false
 		wait := 500 * time.Millisecond
 		request.WaitTimeout = &wait
 		result, err := enricher.Enrich(t.Context(), request)
@@ -656,13 +658,13 @@ func TestEnrichAsyncSurvivesCallerCancellationButHonorsCallTimeout(t *testing.T)
 		return s2s.Response{}, ctx.Err()
 	}}
 	metrics := &signalingMetrics{apiError: make(chan struct{})}
-	created, err := New(Dependencies{S2S: api, Metrics: metrics}, 10)
+	cache := &recordingCache{result: CacheResult{State: CacheMiss}}
+	created, err := New(Dependencies{S2S: api, Cache: cache, Metrics: metrics, MaxBackgroundS2SCalls: 1}, 10)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
 	enricher := created
 	request := cacheableRequest()
-	request.CacheEnabled = false
 	request.Timeout = 40 * time.Millisecond
 	wait := time.Duration(0)
 	request.WaitTimeout = &wait
@@ -724,7 +726,7 @@ func TestEnrichReturnsInProgressThenLateCachedResult(t *testing.T) {
 	}
 }
 
-func TestBackgroundLimitRejectsBeforeCallOrInProgressMarker(t *testing.T) {
+func TestMissingBackgroundCapacityRejectsBeforeCallOrInProgressMarker(t *testing.T) {
 	api := &recordingS2S{}
 	cache := &recordingCache{result: CacheResult{State: CacheMiss}}
 	metrics := &recordingEnrichmentMetrics{}
@@ -733,24 +735,18 @@ func TestBackgroundLimitRejectsBeforeCallOrInProgressMarker(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 	implementation := created.(*enricher)
-	limiter := &recordingBackgroundLimiter{allow: false}
-	implementation.limiter = limiter
 	request := cacheableRequest()
 	wait := time.Duration(0)
 	request.WaitTimeout = &wait
 
 	result, err := implementation.Enrich(t.Context(), request)
-	if err != nil || result.Outcome != OutcomeBackgroundLimit {
-		t.Fatalf("Enrich() = (%#v, %v), want background limit", result, err)
+	if !errors.Is(err, errNonSyncCapacityRequired) {
+		t.Fatalf("Enrich() = (%#v, %v), want missing-capacity error", result, err)
 	}
 	if len(api.calls) != 0 || len(cache.inProgress) != 0 {
 		t.Fatalf("rejected request made API calls or markers: calls=%d markers=%d", len(api.calls), len(cache.inProgress))
 	}
-	if acquires, releases := limiter.counts(); acquires != 1 || releases != 0 {
-		t.Fatalf("limiter counts = (%d, %d), want (1, 0)", acquires, releases)
-	}
-	events := metrics.snapshot()
-	if len(events) != 3 || events[2].name != "not_enriched" || events[2].reason != string(ReasonBackgroundLimit) {
+	if events := metrics.snapshot(); len(events) != 1 || events[0].name != "request" {
 		t.Fatalf("capacity metrics = %#v", events)
 	}
 }
@@ -763,12 +759,12 @@ func TestConfiguredBackgroundCapacityBoundsPotentiallyDetachedCalls(t *testing.T
 		<-release
 		return s2s.Response{Data: json.RawMessage(`{"eids":[]}`)}, nil
 	}}
-	created, err := New(Dependencies{S2S: api, MaxBackgroundS2SCalls: 1}, 10)
+	cache := &recordingCache{result: CacheResult{State: CacheMiss}}
+	created, err := New(Dependencies{S2S: api, Cache: cache, MaxBackgroundS2SCalls: 1}, 10)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
 	request := cacheableRequest()
-	request.CacheEnabled = false
 	wait := time.Duration(0)
 	request.WaitTimeout = &wait
 
@@ -786,7 +782,7 @@ func TestConfiguredBackgroundCapacityBoundsPotentiallyDetachedCalls(t *testing.T
 	}
 	close(release)
 
-	limiter := created.(*enricher).limiter.(boundedBackgroundLimiter)
+	limiter := created.(*enricher).limiter
 	deadline := time.Now().Add(time.Second)
 	for len(limiter) != 0 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
@@ -813,21 +809,15 @@ func TestBackgroundLimiterSkippedForCacheResultsAndSyncCalls(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			api := &recordingS2S{response: s2s.Response{Data: json.RawMessage(`{"eids":[]}`)}}
 			cache := &recordingCache{result: test.cached}
-			created, err := New(Dependencies{S2S: api, Cache: cache}, 10)
+			created, err := New(Dependencies{S2S: api, Cache: cache, MaxBackgroundS2SCalls: 1}, 10)
 			if err != nil {
 				t.Fatalf("New() error = %v", err)
 			}
-			implementation := created.(*enricher)
-			limiter := &recordingBackgroundLimiter{allow: false}
-			implementation.limiter = limiter
 			request := cacheableRequest()
 			request.WaitTimeout = test.wait
-			result, err := implementation.Enrich(t.Context(), request)
+			result, err := created.Enrich(t.Context(), request)
 			if err != nil || result.Outcome == OutcomeBackgroundLimit {
 				t.Fatalf("Enrich() = (%#v, %v), limiter should be skipped", result, err)
-			}
-			if acquires, releases := limiter.counts(); acquires != 0 || releases != 0 {
-				t.Fatalf("limiter counts = (%d, %d), want (0, 0)", acquires, releases)
 			}
 		})
 	}
@@ -845,24 +835,21 @@ func TestBackgroundPermitReleasedWhetherOrNotCallerWaits(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			api := &recordingS2S{response: s2s.Response{Data: json.RawMessage(`{"eids":[]}`)}}
-			created, err := New(Dependencies{S2S: api}, 10)
+			cache := &recordingCache{result: CacheResult{State: CacheMiss}}
+			created, err := New(Dependencies{S2S: api, Cache: cache, MaxBackgroundS2SCalls: 1}, 10)
 			if err != nil {
 				t.Fatalf("New() error = %v", err)
 			}
-			implementation := created.(*enricher)
-			limiter := &recordingBackgroundLimiter{allow: true, released: make(chan struct{}, 1)}
-			implementation.limiter = limiter
+			limiter := created.(*enricher).limiter
 			request := cacheableRequest()
-			request.CacheEnabled = false
 			request.WaitTimeout = &test.wait
-			_, _ = implementation.Enrich(t.Context(), request)
-			select {
-			case <-limiter.released:
-			case <-time.After(time.Second):
-				t.Fatal("background permit was not released")
+			_, _ = created.Enrich(t.Context(), request)
+			deadline := time.Now().Add(time.Second)
+			for len(limiter) != 0 && time.Now().Before(deadline) {
+				time.Sleep(time.Millisecond)
 			}
-			if acquires, releases := limiter.counts(); acquires != 1 || releases != 1 {
-				t.Fatalf("limiter counts = (%d, %d), want (1, 1)", acquires, releases)
+			if len(limiter) != 0 {
+				t.Fatal("background permit was not released")
 			}
 		})
 	}

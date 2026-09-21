@@ -15,8 +15,9 @@ hooks:
         # timeout for hybrid behavior. Async/hybrid requires cache.enabled.
         # wait_timeout: 700
 
-        # Module-instance cap for calls that may outlive their auction wait.
-        # Account configuration cannot override it. Zero means unlimited.
+        # Module-instance cap for S2S calls that may outlive their auction wait.
+        # Required when wait_timeout is less than timeout. Account configuration
+        # cannot override it.
         max_background_s2s_calls: 2000
 
         metrics_enabled: true

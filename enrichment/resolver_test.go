@@ -100,7 +100,9 @@ func (logger *recordingEnrichmentLogger) Warn(message string) {
 
 func newTestEnricher(t *testing.T, api *recordingS2S, metrics *recordingEnrichmentMetrics, logger *recordingEnrichmentLogger) Enricher {
 	t.Helper()
-	created, err := New(Dependencies{S2S: api, Metrics: metrics, Logger: logger}, 10)
+	created, err := New(Dependencies{
+		S2S: api, Metrics: metrics, Logger: logger, MaxBackgroundS2SCalls: 10,
+	}, 10)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -111,6 +113,9 @@ func TestNewEnricher(t *testing.T) {
 	if _, err := New(Dependencies{}, 10); !errors.Is(err, errS2SRequired) {
 		t.Fatalf("New() error = %v, want %v", err, errS2SRequired)
 	}
+	if _, err := New(Dependencies{S2S: &recordingS2S{}, MaxBackgroundS2SCalls: -1}, 10); !errors.Is(err, errNegativeBackgroundS2SLimit) {
+		t.Fatalf("New() error = %v, want %v", err, errNegativeBackgroundS2SLimit)
+	}
 	created, err := New(Dependencies{S2S: &recordingS2S{}}, 7)
 	if err != nil {
 		t.Fatalf("New() with defaults error = %v", err)
@@ -118,6 +123,55 @@ func TestNewEnricher(t *testing.T) {
 	implementation, ok := created.(*enricher)
 	if !ok || implementation.metrics == nil || implementation.logger == nil || implementation.maxCacheKeys != 7 {
 		t.Fatalf("New() = %#v, defaults or key limit not retained", created)
+	}
+}
+
+func TestEnrichValidatesRequest(t *testing.T) {
+	negativeWait := -time.Millisecond
+	asyncWait := time.Duration(0)
+	tests := []struct {
+		name         string
+		dependencies Dependencies
+		update       func(*Request)
+		want         error
+	}{
+		{
+			name: "non-positive timeout", dependencies: Dependencies{S2S: &recordingS2S{}},
+			update: func(request *Request) { request.Timeout = 0 }, want: errTimeoutNotPositive,
+		},
+		{
+			name: "negative wait", dependencies: Dependencies{S2S: &recordingS2S{}},
+			update: func(request *Request) { request.WaitTimeout = &negativeWait }, want: errNegativeWaitTimeout,
+		},
+		{
+			name:         "non-sync without cache",
+			dependencies: Dependencies{S2S: &recordingS2S{}, MaxBackgroundS2SCalls: 1},
+			update:       func(request *Request) { request.WaitTimeout = &asyncWait },
+			want:         errNonSyncCacheRequired,
+		},
+		{
+			name:         "non-sync without capacity",
+			dependencies: Dependencies{S2S: &recordingS2S{}, Cache: &recordingCache{}},
+			update:       func(request *Request) { request.WaitTimeout = &asyncWait },
+			want:         errNonSyncCapacityRequired,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			enricher, err := New(test.dependencies, 10)
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			request := Request{
+				Endpoint: "https://example.test/resolve", Timeout: time.Second,
+				Auction: &openrtb2.BidRequest{}, CacheEnabled: true,
+			}
+			test.update(&request)
+			if _, err := enricher.Enrich(t.Context(), request); !errors.Is(err, test.want) {
+				t.Fatalf("Enrich() error = %v, want %v", err, test.want)
+			}
+		})
 	}
 }
 

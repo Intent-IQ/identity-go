@@ -11,12 +11,19 @@ import (
 	"github.com/Intent-IQ/identity-go/logging"
 )
 
-var errS2SRequired = errors.New("S2S API is required")
+var (
+	errS2SRequired                = errors.New("S2S API is required")
+	errNegativeBackgroundS2SLimit = errors.New("max background S2S calls must not be negative")
+	errTimeoutNotPositive         = errors.New("timeout must be positive")
+	errNegativeWaitTimeout        = errors.New("wait timeout must not be negative")
+	errNonSyncCacheRequired       = errors.New("cache must be enabled for async or hybrid enrichment")
+	errNonSyncCapacityRequired    = errors.New("background S2S capacity must be positive for async or hybrid enrichment")
+)
 
 type enricher struct {
 	logger       logging.Logger
 	s2s          s2s.API
-	limiter      backgroundLimiter
+	limiter      s2sLimiter
 	cache        Cache
 	maxCacheKeys int
 	metrics      Metrics
@@ -41,6 +48,9 @@ func New(dependencies Dependencies, maxCacheKeys int) (Enricher, error) {
 	if dependencies.S2S == nil {
 		return nil, errS2SRequired
 	}
+	if dependencies.MaxBackgroundS2SCalls < 0 {
+		return nil, errNegativeBackgroundS2SLimit
+	}
 	if dependencies.Metrics == nil {
 		dependencies.Metrics = NoopMetrics{}
 	}
@@ -53,7 +63,7 @@ func New(dependencies Dependencies, maxCacheKeys int) (Enricher, error) {
 		metrics:      dependencies.Metrics,
 		logger:       dependencies.Logger,
 		maxCacheKeys: maxCacheKeys,
-		limiter:      newBackgroundLimiter(dependencies.MaxBackgroundS2SCalls),
+		limiter:      newS2SLimiter(dependencies.MaxBackgroundS2SCalls),
 	}, nil
 }
 
@@ -66,6 +76,9 @@ func (enricher *enricher) Enrich(ctx context.Context, input Request) (Result, er
 	}
 	if input.Auction == nil {
 		return Result{}, nil
+	}
+	if err := enricher.validateRequest(input); err != nil {
+		return Result{}, err
 	}
 
 	if enricher.cache == nil || !input.CacheEnabled {
@@ -115,6 +128,27 @@ func (enricher *enricher) Enrich(ctx context.Context, input Request) (Result, er
 		}
 		return enricher.execute(ctx, input, keys, release)
 	}
+}
+
+func (enricher *enricher) validateRequest(input Request) error {
+	if input.Timeout <= 0 {
+		return errTimeoutNotPositive
+	}
+	if input.WaitTimeout != nil && *input.WaitTimeout < 0 {
+		return errNegativeWaitTimeout
+	}
+
+	_, mode := normalizeWaitTimeout(input.Timeout, input.WaitTimeout)
+	if mode == WaitModeSync {
+		return nil
+	}
+	if enricher.cache == nil || !input.CacheEnabled {
+		return errNonSyncCacheRequired
+	}
+	if cap(enricher.limiter) == 0 {
+		return errNonSyncCapacityRequired
+	}
+	return nil
 }
 
 func (enricher *enricher) executeWithAdmission(ctx context.Context, input Request, keys []CacheKey) (Result, error) {
