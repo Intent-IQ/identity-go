@@ -14,22 +14,45 @@ type Enricher interface {
 }
 
 type Request struct {
-	PartnerID    string
-	Endpoint     string
-	Auction      *openrtb2.BidRequest
-	Timeout      time.Duration
+	PartnerID string
+	Endpoint  string
+	Auction   *openrtb2.BidRequest
+	Timeout   time.Duration
+	// WaitTimeout bounds how long the caller waits for enrichment. A nil value
+	// preserves synchronous behavior; a non-nil zero value means do not wait.
+	WaitTimeout  *time.Duration
 	CacheEnabled bool
 }
 
 type Outcome string
 
 const (
-	OutcomeEnriched    Outcome = "enriched"
-	OutcomeNoIDs       Outcome = "no_ids"
-	OutcomeCachedNoIDs Outcome = "no_ids_cached"
-	OutcomeInProgress  Outcome = "in_progress"
-	OutcomeNoEndpoint  Outcome = "no_endpoint"
+	OutcomeEnriched        Outcome = "enriched"
+	OutcomeNoIDs           Outcome = "no_ids"
+	OutcomeCachedNoIDs     Outcome = "no_ids_cached"
+	OutcomeInProgress      Outcome = "in_progress"
+	OutcomeNoEndpoint      Outcome = "no_endpoint"
+	OutcomeWaitExpired     Outcome = "wait_expired"
+	OutcomeBackgroundLimit Outcome = "background_limit"
 )
+
+type WaitMode string
+
+const (
+	WaitModeSync   WaitMode = "sync"
+	WaitModeAsync  WaitMode = "async"
+	WaitModeHybrid WaitMode = "hybrid"
+)
+
+func normalizeWaitTimeout(timeout time.Duration, wait *time.Duration) (time.Duration, WaitMode) {
+	if wait == nil || timeout <= 0 || *wait >= timeout {
+		return timeout, WaitModeSync
+	}
+	if *wait <= 0 {
+		return 0, WaitModeAsync
+	}
+	return *wait, WaitModeHybrid
+}
 
 type Result struct {
 	EIDs             []openrtb2.EID

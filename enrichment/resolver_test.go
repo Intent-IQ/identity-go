@@ -6,6 +6,7 @@ import (
 	"errors"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -50,28 +51,43 @@ type enrichmentMetricEvent struct {
 	layer     CacheLayer
 }
 
-type recordingEnrichmentMetrics struct{ events []enrichmentMetricEvent }
+type recordingEnrichmentMetrics struct {
+	mu     sync.Mutex
+	events []enrichmentMetricEvent
+}
+
+func (metrics *recordingEnrichmentMetrics) record(event enrichmentMetricEvent) {
+	metrics.mu.Lock()
+	metrics.events = append(metrics.events, event)
+	metrics.mu.Unlock()
+}
+
+func (metrics *recordingEnrichmentMetrics) snapshot() []enrichmentMetricEvent {
+	metrics.mu.Lock()
+	defer metrics.mu.Unlock()
+	return append([]enrichmentMetricEvent(nil), metrics.events...)
+}
 
 func (metrics *recordingEnrichmentMetrics) Request(partnerID string) {
-	metrics.events = append(metrics.events, enrichmentMetricEvent{name: "request", partnerID: partnerID})
+	metrics.record(enrichmentMetricEvent{name: "request", partnerID: partnerID})
 }
 func (metrics *recordingEnrichmentMetrics) Enriched(partnerID string) {
-	metrics.events = append(metrics.events, enrichmentMetricEvent{name: "enriched", partnerID: partnerID})
+	metrics.record(enrichmentMetricEvent{name: "enriched", partnerID: partnerID})
 }
 func (metrics *recordingEnrichmentMetrics) NotEnriched(partnerID string, reason NotEnrichedReason) {
-	metrics.events = append(metrics.events, enrichmentMetricEvent{name: "not_enriched", partnerID: partnerID, reason: string(reason)})
+	metrics.record(enrichmentMetricEvent{name: "not_enriched", partnerID: partnerID, reason: string(reason)})
 }
 func (metrics *recordingEnrichmentMetrics) APIRequestDuration(partnerID string, duration time.Duration) {
-	metrics.events = append(metrics.events, enrichmentMetricEvent{name: "api_duration", partnerID: partnerID, duration: duration})
+	metrics.record(enrichmentMetricEvent{name: "api_duration", partnerID: partnerID, duration: duration})
 }
 func (metrics *recordingEnrichmentMetrics) APISuccess(partnerID string) {
-	metrics.events = append(metrics.events, enrichmentMetricEvent{name: "api_success", partnerID: partnerID})
+	metrics.record(enrichmentMetricEvent{name: "api_success", partnerID: partnerID})
 }
 func (metrics *recordingEnrichmentMetrics) APIError(partnerID, kind string, statusCode int) {
-	metrics.events = append(metrics.events, enrichmentMetricEvent{name: "api_error", partnerID: partnerID, kind: kind, status: statusCode})
+	metrics.record(enrichmentMetricEvent{name: "api_error", partnerID: partnerID, kind: kind, status: statusCode})
 }
 func (metrics *recordingEnrichmentMetrics) CacheLookup(partnerID string, result CacheLookupResult, layer CacheLayer) {
-	metrics.events = append(metrics.events, enrichmentMetricEvent{name: "cache_lookup", partnerID: partnerID, lookup: result, layer: layer})
+	metrics.record(enrichmentMetricEvent{name: "cache_lookup", partnerID: partnerID, lookup: result, layer: layer})
 }
 
 type recordingEnrichmentLogger struct{ warnings []string }

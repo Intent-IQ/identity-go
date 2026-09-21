@@ -6,10 +6,12 @@ type NotEnrichedReason string
 type CacheLookupResult string
 
 const (
-	ReasonNoIDs       NotEnrichedReason = "no_ids"
-	ReasonNoIDsCached NotEnrichedReason = "no_ids_cached"
-	ReasonInProgress  NotEnrichedReason = "in_progress"
-	ReasonNoEndpoint  NotEnrichedReason = "no_endpoint"
+	ReasonNoIDs           NotEnrichedReason = "no_ids"
+	ReasonNoIDsCached     NotEnrichedReason = "no_ids_cached"
+	ReasonInProgress      NotEnrichedReason = "in_progress"
+	ReasonNoEndpoint      NotEnrichedReason = "no_endpoint"
+	ReasonWaitExpired     NotEnrichedReason = "wait_expired"
+	ReasonBackgroundLimit NotEnrichedReason = "background_limit"
 )
 
 const (

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,6 +25,8 @@ type recordingCache struct {
 	negative       []cacheNegativeCall
 	inProgress     [][]CacheKey
 	inProgressTTLs []time.Duration
+	resolvedCtxErr error
+	negativeCtxErr error
 }
 
 type cacheResolvedCall struct {
@@ -40,6 +43,55 @@ type expiringMarkerCache struct {
 	recordingCache
 	now       time.Time
 	expiresAt time.Time
+}
+
+type lifecycleCache struct {
+	mu       sync.Mutex
+	state    CacheState
+	result   Result
+	resolved chan struct{}
+	negative chan struct{}
+}
+
+type signalingMetrics struct {
+	NoopMetrics
+	apiError chan struct{}
+}
+
+func (metrics *signalingMetrics) APIError(string, string, int) {
+	close(metrics.apiError)
+}
+
+func (cache *lifecycleCache) Get(context.Context, []CacheKey) (CacheResult, error) {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	return CacheResult{State: cache.state, Layer: CacheLayerL1, Result: cache.result}, nil
+}
+
+func (cache *lifecycleCache) PutResolved(_ context.Context, _ []CacheKey, result Result) error {
+	cache.mu.Lock()
+	cache.state = CacheHit
+	cache.result = result
+	cache.mu.Unlock()
+	close(cache.resolved)
+	return nil
+}
+
+func (cache *lifecycleCache) PutNegative(context.Context, []CacheKey, ResultMetadata) error {
+	cache.mu.Lock()
+	cache.state = CacheNegative
+	cache.mu.Unlock()
+	if cache.negative != nil {
+		close(cache.negative)
+	}
+	return nil
+}
+
+func (cache *lifecycleCache) PutInProgress(context.Context, []CacheKey, time.Duration) error {
+	cache.mu.Lock()
+	cache.state = CacheInProgress
+	cache.mu.Unlock()
+	return nil
 }
 
 func (cache *expiringMarkerCache) Get(_ context.Context, keys []CacheKey) (CacheResult, error) {
@@ -60,12 +112,14 @@ func (cache *recordingCache) Get(_ context.Context, keys []CacheKey) (CacheResul
 	return cache.result, cache.getErr
 }
 
-func (cache *recordingCache) PutResolved(_ context.Context, keys []CacheKey, result Result) error {
+func (cache *recordingCache) PutResolved(ctx context.Context, keys []CacheKey, result Result) error {
+	cache.resolvedCtxErr = ctx.Err()
 	cache.resolved = append(cache.resolved, cacheResolvedCall{keys: cloneCacheKeys(keys), result: result})
 	return cache.putErr
 }
 
-func (cache *recordingCache) PutNegative(_ context.Context, keys []CacheKey, metadata ResultMetadata) error {
+func (cache *recordingCache) PutNegative(ctx context.Context, keys []CacheKey, metadata ResultMetadata) error {
+	cache.negativeCtxErr = ctx.Err()
 	cache.negative = append(cache.negative, cacheNegativeCall{keys: cloneCacheKeys(keys), metadata: metadata})
 	return cache.putErr
 }
@@ -329,6 +383,476 @@ func TestEnrichRetriesAfterErrorMarkerExpires(t *testing.T) {
 			result, err := enricher.Enrich(t.Context(), request)
 			if err != nil || result.Outcome != OutcomeEnriched || len(api.calls) != 2 || len(cache.resolved) != 1 {
 				t.Fatalf("third Enrich() = (%#v, %v), S2S calls=%d resolved writes=%d", result, err, len(api.calls), len(cache.resolved))
+			}
+		})
+	}
+}
+
+func TestCacheWriteSurvivesACallThatSpentTheWholeTimeout(t *testing.T) {
+	// The slowest calls are the ones the background modes exist for, and their
+	// result still has to reach the cache.
+	api := &recordingS2S{resolve: func(ctx context.Context) (s2s.Response, error) {
+		<-ctx.Done()
+		return s2s.Response{Data: json.RawMessage(
+			`{"eids":[{"source":"intentiq.com","uids":[{"id":"resolved"}]}]}`,
+		)}, nil
+	}}
+	cache := &recordingCache{}
+	enricher := newCachedTestEnricher(t, api, cache, &recordingEnrichmentMetrics{}, &recordingEnrichmentLogger{}, 10).(*enricher)
+	request := cacheableRequest()
+	request.Timeout = 50 * time.Millisecond
+	keys := []CacheKey{{Value: "pubcid:shared", Type: CacheKeyFirstParty}}
+
+	if _, err := enricher.execute(t.Context(), request, keys, nil); err != nil {
+		t.Fatalf("execute() error = %v", err)
+	}
+
+	if len(cache.resolved) != 1 || cache.resolvedCtxErr != nil {
+		t.Fatalf("resolved writes = %d, context error = %v", len(cache.resolved), cache.resolvedCtxErr)
+	}
+}
+
+func TestExecuteDetachedFromCallerThroughCacheWrite(t *testing.T) {
+	tests := []struct {
+		name       string
+		response   s2s.Response
+		wantResult Outcome
+		wantWrite  string
+	}{
+		{
+			name: "positive",
+			response: s2s.Response{Data: json.RawMessage(
+				`{"eids":[{"source":"intentiq.com","uids":[{"id":"resolved"}]}]}`,
+			)},
+			wantResult: OutcomeEnriched,
+			wantWrite:  "resolved",
+		},
+		{
+			name:       "negative",
+			response:   s2s.Response{Data: json.RawMessage(`{"eids":[]}`)},
+			wantResult: OutcomeNoIDs,
+			wantWrite:  "negative",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			started := make(chan struct{})
+			release := make(chan struct{})
+			api := &recordingS2S{resolve: func(context.Context) (s2s.Response, error) {
+				close(started)
+				<-release
+				return test.response, nil
+			}}
+			cache := &recordingCache{}
+			enricher := newCachedTestEnricher(t, api, cache, &recordingEnrichmentMetrics{}, &recordingEnrichmentLogger{}, 10).(*enricher)
+			request := cacheableRequest()
+			wait := 100 * time.Millisecond
+			request.WaitTimeout = &wait
+			keys := []CacheKey{{Value: "pubcid:shared", Type: CacheKeyFirstParty}}
+			parent, cancel := context.WithCancel(t.Context())
+			t.Cleanup(cancel)
+
+			type executionResult struct {
+				result Result
+				err    error
+			}
+			finished := make(chan executionResult, 1)
+			go func() {
+				result, err := enricher.execute(parent, request, keys, nil)
+				finished <- executionResult{result: result, err: err}
+			}()
+
+			<-started
+			cancel()
+			close(release)
+			got := <-finished
+			if got.err != nil || got.result.Outcome != test.wantResult {
+				t.Fatalf("execute() = (%#v, %v), want outcome %q", got.result, got.err, test.wantResult)
+			}
+			switch test.wantWrite {
+			case "resolved":
+				if len(cache.resolved) != 1 || cache.resolvedCtxErr != nil {
+					t.Fatalf("resolved writes = %d, context error = %v", len(cache.resolved), cache.resolvedCtxErr)
+				}
+			case "negative":
+				if len(cache.negative) != 1 || cache.negativeCtxErr != nil {
+					t.Fatalf("negative writes = %d, context error = %v", len(cache.negative), cache.negativeCtxErr)
+				}
+			}
+		})
+	}
+}
+
+func TestPreparedResolutionDoesNotRetainAuctionOrKeySlice(t *testing.T) {
+	request := cacheableRequest()
+	request.Auction.User.Consent = "original-consent"
+	keys := []CacheKey{{Value: "pubcid:original", Type: CacheKeyFirstParty}}
+	prepared := prepareResolution(request, keys)
+
+	request.Auction.User.Consent = "mutated-consent"
+	request.Auction.User.EIDs[0].UIDs[0].ID = "mutated"
+	request.Auction.Device.IP = "203.0.113.10"
+	keys[0].Value = "pubcid:mutated"
+
+	api := &recordingS2S{response: s2s.Response{Data: json.RawMessage(
+		`{"eids":[{"source":"intentiq.com","uids":[{"id":"resolved"}]}]}`,
+	)}}
+	cache := &recordingCache{}
+	enricher := newCachedTestEnricher(t, api, cache, &recordingEnrichmentMetrics{}, &recordingEnrichmentLogger{}, 10).(*enricher)
+	result, err := enricher.executePrepared(t.Context(), prepared)
+	if err != nil || result.Outcome != OutcomeEnriched {
+		t.Fatalf("executePrepared() = (%#v, %v)", result, err)
+	}
+	if len(api.calls) != 1 || api.calls[0].consent != "original-consent" || strings.Contains(api.calls[0].requestURL, "mutated") || strings.Contains(api.calls[0].requestURL, "203.0.113.10") {
+		t.Fatalf("prepared API call changed after auction mutation: %#v", api.calls)
+	}
+	if len(cache.resolved) != 1 || cache.resolved[0].keys[0].Value != "pubcid:original" {
+		t.Fatalf("prepared cache keys changed after source mutation: %#v", cache.resolved)
+	}
+}
+
+func TestEnrichAsyncReturnsBeforeResolutionAndWarmsCache(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	api := &recordingS2S{resolve: func(context.Context) (s2s.Response, error) {
+		close(started)
+		<-release
+		return s2s.Response{Data: json.RawMessage(
+			`{"eids":[{"source":"intentiq.com","uids":[{"id":"resolved"}]}]}`,
+		)}, nil
+	}}
+	cache := &lifecycleCache{resolved: make(chan struct{})}
+	enricher := newCachedTestEnricher(t, api, cache, &recordingEnrichmentMetrics{}, &recordingEnrichmentLogger{}, 10)
+	request := cacheableRequest()
+	wait := time.Duration(0)
+	request.WaitTimeout = &wait
+
+	result, err := enricher.Enrich(t.Context(), request)
+	if err != nil || result.Outcome != OutcomeWaitExpired {
+		t.Fatalf("Enrich() = (%#v, %v), want wait expiry", result, err)
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("S2S call did not start")
+	}
+
+	request.Auction.User.EIDs[0].UIDs[0].ID = "mutated"
+	request.Auction.Device.IP = "203.0.113.10"
+	close(release)
+	select {
+	case <-cache.resolved:
+	case <-time.After(time.Second):
+		t.Fatal("late S2S result was not cached")
+	}
+	if strings.Contains(api.calls[0].requestURL, "mutated") || strings.Contains(api.calls[0].requestURL, "203.0.113.10") {
+		t.Fatalf("late call retained the auction: %#v", api.calls[0])
+	}
+}
+
+func TestEnrichAsyncNeverUsesImmediateResultForCurrentAuction(t *testing.T) {
+	api := &recordingS2S{response: s2s.Response{Data: json.RawMessage(
+		`{"eids":[{"source":"intentiq.com","uids":[{"id":"resolved"}]}]}`,
+	)}}
+	cache := &lifecycleCache{resolved: make(chan struct{})}
+	enricher := newCachedTestEnricher(t, api, cache, &recordingEnrichmentMetrics{}, &recordingEnrichmentLogger{}, 10)
+	request := cacheableRequest()
+	wait := time.Duration(0)
+	request.WaitTimeout = &wait
+
+	result, err := enricher.Enrich(t.Context(), request)
+	if err != nil || result.Outcome != OutcomeWaitExpired || len(result.EIDs) != 0 {
+		t.Fatalf("Enrich() = (%#v, %v), async mode must not enrich the current auction", result, err)
+	}
+	select {
+	case <-cache.resolved:
+	case <-time.After(time.Second):
+		t.Fatal("immediate async result was not cached")
+	}
+}
+
+func TestEnrichHybridCompletesOnEitherSideOfWait(t *testing.T) {
+	t.Run("in time", func(t *testing.T) {
+		api := &recordingS2S{response: s2s.Response{Data: json.RawMessage(
+			`{"eids":[{"source":"intentiq.com","uids":[{"id":"resolved"}]}]}`,
+		)}}
+		enricher := newTestEnricher(t, api, &recordingEnrichmentMetrics{}, &recordingEnrichmentLogger{})
+		request := cacheableRequest()
+		request.CacheEnabled = false
+		wait := 500 * time.Millisecond
+		request.WaitTimeout = &wait
+		result, err := enricher.Enrich(t.Context(), request)
+		if err != nil || result.Outcome != OutcomeEnriched {
+			t.Fatalf("Enrich() = (%#v, %v), want in-time enrichment", result, err)
+		}
+	})
+
+	t.Run("after wait", func(t *testing.T) {
+		release := make(chan struct{})
+		api := &recordingS2S{resolve: func(context.Context) (s2s.Response, error) {
+			<-release
+			return s2s.Response{Data: json.RawMessage(`{"eids":[]}`)}, nil
+		}}
+		cache := &lifecycleCache{resolved: make(chan struct{}), negative: make(chan struct{})}
+		enricher := newCachedTestEnricher(t, api, cache, &recordingEnrichmentMetrics{}, &recordingEnrichmentLogger{}, 10)
+		request := cacheableRequest()
+		wait := 10 * time.Millisecond
+		request.WaitTimeout = &wait
+		result, err := enricher.Enrich(t.Context(), request)
+		if err != nil || result.Outcome != OutcomeWaitExpired {
+			t.Fatalf("Enrich() = (%#v, %v), want wait expiry", result, err)
+		}
+		close(release)
+		select {
+		case <-cache.negative:
+		case <-time.After(time.Second):
+			t.Fatal("late no-ID result was not cached")
+		}
+	})
+}
+
+func TestEnrichAsyncSurvivesCallerCancellationButHonorsCallTimeout(t *testing.T) {
+	callFinished := make(chan error, 1)
+	api := &recordingS2S{resolve: func(ctx context.Context) (s2s.Response, error) {
+		<-ctx.Done()
+		callFinished <- ctx.Err()
+		return s2s.Response{}, ctx.Err()
+	}}
+	metrics := &signalingMetrics{apiError: make(chan struct{})}
+	created, err := New(Dependencies{S2S: api, Metrics: metrics}, 10)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	enricher := created
+	request := cacheableRequest()
+	request.CacheEnabled = false
+	request.Timeout = 40 * time.Millisecond
+	wait := time.Duration(0)
+	request.WaitTimeout = &wait
+	parent, cancel := context.WithCancel(t.Context())
+
+	result, err := enricher.Enrich(parent, request)
+	if err != nil || result.Outcome != OutcomeWaitExpired {
+		t.Fatalf("Enrich() = (%#v, %v), want wait expiry", result, err)
+	}
+	cancel()
+	select {
+	case callErr := <-callFinished:
+		if !errors.Is(callErr, context.DeadlineExceeded) {
+			t.Fatalf("call error = %v, want deadline exceeded", callErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("S2S call did not reach its full timeout")
+	}
+	select {
+	case <-metrics.apiError:
+	case <-time.After(time.Second):
+		t.Fatal("late timeout was not recorded")
+	}
+}
+
+func TestEnrichReturnsInProgressThenLateCachedResult(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	api := &recordingS2S{resolve: func(context.Context) (s2s.Response, error) {
+		close(started)
+		<-release
+		return s2s.Response{Data: json.RawMessage(
+			`{"eids":[{"source":"intentiq.com","uids":[{"id":"resolved"}]}]}`,
+		)}, nil
+	}}
+	cache := &lifecycleCache{resolved: make(chan struct{})}
+	enricher := newCachedTestEnricher(t, api, cache, &recordingEnrichmentMetrics{}, &recordingEnrichmentLogger{}, 10)
+	request := cacheableRequest()
+	wait := time.Duration(0)
+	request.WaitTimeout = &wait
+
+	first, err := enricher.Enrich(t.Context(), request)
+	if err != nil || first.Outcome != OutcomeWaitExpired {
+		t.Fatalf("first Enrich() = (%#v, %v)", first, err)
+	}
+	<-started
+	second, err := enricher.Enrich(t.Context(), request)
+	if err != nil || second.Outcome != OutcomeInProgress {
+		t.Fatalf("second Enrich() = (%#v, %v), want in progress", second, err)
+	}
+	close(release)
+	<-cache.resolved
+	third, err := enricher.Enrich(t.Context(), request)
+	if err != nil || third.Outcome != OutcomeEnriched || len(third.EIDs) != 1 {
+		t.Fatalf("third Enrich() = (%#v, %v), want cached enrichment", third, err)
+	}
+	if len(api.calls) != 1 {
+		t.Fatalf("S2S calls = %d, want 1", len(api.calls))
+	}
+}
+
+func TestBackgroundLimitRejectsBeforeCallOrInProgressMarker(t *testing.T) {
+	api := &recordingS2S{}
+	cache := &recordingCache{result: CacheResult{State: CacheMiss}}
+	metrics := &recordingEnrichmentMetrics{}
+	created, err := New(Dependencies{S2S: api, Cache: cache, Metrics: metrics}, 10)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	implementation := created.(*enricher)
+	limiter := &recordingBackgroundLimiter{allow: false}
+	implementation.limiter = limiter
+	request := cacheableRequest()
+	wait := time.Duration(0)
+	request.WaitTimeout = &wait
+
+	result, err := implementation.Enrich(t.Context(), request)
+	if err != nil || result.Outcome != OutcomeBackgroundLimit {
+		t.Fatalf("Enrich() = (%#v, %v), want background limit", result, err)
+	}
+	if len(api.calls) != 0 || len(cache.inProgress) != 0 {
+		t.Fatalf("rejected request made API calls or markers: calls=%d markers=%d", len(api.calls), len(cache.inProgress))
+	}
+	if acquires, releases := limiter.counts(); acquires != 1 || releases != 0 {
+		t.Fatalf("limiter counts = (%d, %d), want (1, 0)", acquires, releases)
+	}
+	events := metrics.snapshot()
+	if len(events) != 3 || events[2].name != "not_enriched" || events[2].reason != string(ReasonBackgroundLimit) {
+		t.Fatalf("capacity metrics = %#v", events)
+	}
+}
+
+func TestConfiguredBackgroundCapacityBoundsPotentiallyDetachedCalls(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	api := &recordingS2S{resolve: func(context.Context) (s2s.Response, error) {
+		close(started)
+		<-release
+		return s2s.Response{Data: json.RawMessage(`{"eids":[]}`)}, nil
+	}}
+	created, err := New(Dependencies{S2S: api, MaxBackgroundCalls: 1}, 10)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	request := cacheableRequest()
+	request.CacheEnabled = false
+	wait := time.Duration(0)
+	request.WaitTimeout = &wait
+
+	first, err := created.Enrich(t.Context(), request)
+	if err != nil || first.Outcome != OutcomeWaitExpired {
+		t.Fatalf("first Enrich() = (%#v, %v)", first, err)
+	}
+	<-started
+	second, err := created.Enrich(t.Context(), request)
+	if err != nil || second.Outcome != OutcomeBackgroundLimit {
+		t.Fatalf("second Enrich() = (%#v, %v), want capacity rejection", second, err)
+	}
+	if len(api.calls) != 1 {
+		t.Fatalf("S2S calls = %d, want 1", len(api.calls))
+	}
+	close(release)
+
+	limiter := created.(*enricher).limiter.(boundedBackgroundLimiter)
+	deadline := time.Now().Add(time.Second)
+	for len(limiter) != 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if len(limiter) != 0 {
+		t.Fatal("configured background permit was not released")
+	}
+}
+
+func TestBackgroundLimiterSkippedForCacheResultsAndSyncCalls(t *testing.T) {
+	positive := Result{EIDs: []openrtb2.EID{{Source: "intentiq.com"}}}
+	tests := []struct {
+		name    string
+		request Request
+		cached  CacheResult
+	}{
+		{name: "positive hit", request: cacheableRequest(), cached: CacheResult{State: CacheHit, Result: positive}},
+		{name: "negative hit", request: cacheableRequest(), cached: CacheResult{State: CacheNegative}},
+		{name: "in progress", request: cacheableRequest(), cached: CacheResult{State: CacheInProgress}},
+		{name: "sync miss", request: cacheableRequest(), cached: CacheResult{State: CacheMiss}},
+	}
+	zero := time.Duration(0)
+	for index := range 3 {
+		tests[index].request.WaitTimeout = &zero
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			api := &recordingS2S{response: s2s.Response{Data: json.RawMessage(`{"eids":[]}`)}}
+			cache := &recordingCache{result: test.cached}
+			created, err := New(Dependencies{S2S: api, Cache: cache}, 10)
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			implementation := created.(*enricher)
+			limiter := &recordingBackgroundLimiter{allow: false}
+			implementation.limiter = limiter
+			result, err := implementation.Enrich(t.Context(), test.request)
+			if err != nil || result.Outcome == OutcomeBackgroundLimit {
+				t.Fatalf("Enrich() = (%#v, %v), limiter should be skipped", result, err)
+			}
+			if acquires, releases := limiter.counts(); acquires != 0 || releases != 0 {
+				t.Fatalf("limiter counts = (%d, %d), want (0, 0)", acquires, releases)
+			}
+		})
+	}
+}
+
+func TestBackgroundPermitReleasedForEveryTerminalPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		wait    time.Duration
+		timeout time.Duration
+		resolve func(context.Context) (s2s.Response, error)
+	}{
+		{
+			name: "in-time success", wait: 500 * time.Millisecond, timeout: time.Second,
+			resolve: func(context.Context) (s2s.Response, error) {
+				return s2s.Response{Data: json.RawMessage(`{"eids":[]}`)}, nil
+			},
+		},
+		{
+			name: "late success", wait: 0, timeout: time.Second,
+			resolve: func(context.Context) (s2s.Response, error) {
+				return s2s.Response{Data: json.RawMessage(`{"eids":[]}`)}, nil
+			},
+		},
+		{
+			name: "error", wait: 500 * time.Millisecond, timeout: time.Second,
+			resolve: func(context.Context) (s2s.Response, error) { return s2s.Response{}, errors.New("failed") },
+		},
+		{
+			name: "timeout", wait: 0, timeout: 20 * time.Millisecond,
+			resolve: func(ctx context.Context) (s2s.Response, error) {
+				<-ctx.Done()
+				return s2s.Response{}, ctx.Err()
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			api := &recordingS2S{resolve: test.resolve}
+			created, err := New(Dependencies{S2S: api}, 10)
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			implementation := created.(*enricher)
+			limiter := &recordingBackgroundLimiter{allow: true, released: make(chan struct{}, 1)}
+			implementation.limiter = limiter
+			request := cacheableRequest()
+			request.CacheEnabled = false
+			request.Timeout = test.timeout
+			request.WaitTimeout = &test.wait
+			_, _ = implementation.Enrich(t.Context(), request)
+			select {
+			case <-limiter.released:
+			case <-time.After(time.Second):
+				t.Fatal("background permit was not released")
+			}
+			if acquires, releases := limiter.counts(); acquires != 1 || releases != 1 {
+				t.Fatalf("limiter counts = (%d, %d), want (1, 1)", acquires, releases)
 			}
 		})
 	}

@@ -9,6 +9,16 @@ hooks:
         reports_endpoint: https://reports.intentiq.com/report
         timeout: 1000 # milliseconds
 
+        # How long the auction waits for enrichment. Omit this key, or set it
+        # greater than or equal to timeout, to preserve synchronous behavior.
+        # Set it to 0 for cache-warming-only async behavior, or between 0 and
+        # timeout for hybrid behavior. Async/hybrid requires cache.enabled.
+        # wait_timeout: 700
+
+        # Module-instance cap for calls that may outlive their auction wait.
+        # Account configuration cannot override it. Zero means unlimited.
+        max_background_calls: 2000
+
         metrics_enabled: true
         metrics_port: 9091
 
@@ -51,14 +61,18 @@ hooks:
       /openrtb2/auction:
         stages:
           processed_auction_request:
+            # Group timeouts must stay above the module's own timeout (1000 above).
+            # Prebid Server stops waiting here and discards the hook result, so a
+            # group timeout equal to the module timeout races the module's own
+            # fail-open path and throws away enrichment that did arrive.
             groups:
-              - timeout: 1000
+              - timeout: 1500
                 hook_sequence:
                   - module_code: intentiq.identity
                     hook_impl_code: HandleProcessedAuctionHook
           auction_response:
             groups:
-              - timeout: 1000
+              - timeout: 1500
                 hook_sequence:
                   - module_code: intentiq.identity
                     hook_impl_code: HandleAuctionResponseHook

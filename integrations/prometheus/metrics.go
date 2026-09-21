@@ -84,7 +84,7 @@ func New(registerer prom.Registerer) (*Metrics, error) {
 	}
 	if metrics.notEnriched, err = registerCounterVec(registerer, prom.NewCounterVec(counterOpts(
 		"not_enriched_total",
-		"Resolutions that added no eids, by reason (no_ids|no_ids_cached|in_progress|no_endpoint) and partner_id. S2S failures are counted in api_error_total.",
+		"Resolutions that added no eids, by reason (no_ids|no_ids_cached|in_progress|no_endpoint|wait_expired|background_limit) and partner_id. S2S failures are counted in api_error_total.",
 	), []string{"reason", "partner_id"})); err != nil {
 		return nil, err
 	}

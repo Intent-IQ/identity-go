@@ -47,6 +47,9 @@ func Builder(rawConfig json.RawMessage, dependencies moduledeps.ModuleDeps) (int
 			return nil, fmt.Errorf("intentiq identity: parse config: %w", err)
 		}
 	}
+	if err := config.validate(); err != nil {
+		return nil, fmt.Errorf("intentiq identity: invalid config: %w", err)
+	}
 
 	httpClient := dependencies.HTTPClient
 	if httpClient == nil {
@@ -98,10 +101,11 @@ func Builder(rawConfig json.RawMessage, dependencies moduledeps.ModuleDeps) (int
 	}
 
 	enricher, err := iiqidenrichment.New(iiqidenrichment.Dependencies{
-		S2S:     iiqids2s.NewClient(httpClient),
-		Cache:   identityCache,
-		Metrics: enrichmentMetrics,
-		Logger:  logger,
+		S2S:                iiqids2s.NewClient(httpClient),
+		Cache:              identityCache,
+		Metrics:            enrichmentMetrics,
+		Logger:             logger,
+		MaxBackgroundCalls: config.MaxBackgroundCalls,
 	}, config.Cache.MaxKeys)
 	if err != nil {
 		if store != nil {

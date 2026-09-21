@@ -28,6 +28,7 @@ func (module *Module) HandleProcessedAuctionHook(
 		Endpoint:     config.APIEndpoint,
 		Auction:      auction,
 		Timeout:      config.timeout(),
+		WaitTimeout:  config.waitTimeout(),
 		CacheEnabled: config.Cache.Enabled,
 	})
 	if err != nil {

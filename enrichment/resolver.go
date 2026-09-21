@@ -14,11 +14,27 @@ import (
 var errS2SRequired = errors.New("S2S API is required")
 
 type enricher struct {
-	s2s          s2s.API
-	cache        Cache
-	metrics      Metrics
 	logger       logging.Logger
+	s2s          s2s.API
+	limiter      backgroundLimiter
+	cache        Cache
 	maxCacheKeys int
+	metrics      Metrics
+}
+
+// preparedResolution contains everything execution needs after the host request
+// is no longer safe to retain. In particular, it contains no auction pointer.
+type preparedResolution struct {
+	partnerID  string
+	requestURL string
+	consent    string
+	timeout    time.Duration
+	cacheKeys  []CacheKey
+}
+
+type resolutionCompletion struct {
+	result Result
+	err    error
 }
 
 func New(dependencies Dependencies, maxCacheKeys int) (Enricher, error) {
@@ -37,6 +53,7 @@ func New(dependencies Dependencies, maxCacheKeys int) (Enricher, error) {
 		metrics:      dependencies.Metrics,
 		logger:       dependencies.Logger,
 		maxCacheKeys: maxCacheKeys,
+		limiter:      newBackgroundLimiter(dependencies.MaxBackgroundCalls),
 	}, nil
 }
 
@@ -52,12 +69,12 @@ func (enricher *enricher) Enrich(ctx context.Context, input Request) (Result, er
 	}
 
 	if enricher.cache == nil || !input.CacheEnabled {
-		return enricher.resolve(ctx, input)
+		return enricher.executeWithAdmission(ctx, input, nil)
 	}
 
 	keys := extractCacheKeys(input.Auction, enricher.maxCacheKeys)
 	if len(keys) == 0 {
-		return enricher.resolve(ctx, input)
+		return enricher.executeWithAdmission(ctx, input, nil)
 	}
 
 	cached, err := enricher.cache.Get(ctx, keys)
@@ -88,53 +105,130 @@ func (enricher *enricher) Enrich(ctx context.Context, input Request) (Result, er
 		return Result{Outcome: OutcomeInProgress, CacheLayer: cached.Layer}, nil
 	default:
 		enricher.metrics.CacheLookup(input.PartnerID, CacheLookupMiss, cached.Layer)
+		release, admitted := enricher.acquireBackground(input)
+		if !admitted {
+			enricher.metrics.NotEnriched(input.PartnerID, ReasonBackgroundLimit)
+			return Result{Outcome: OutcomeBackgroundLimit}, nil
+		}
 		if err := enricher.cache.PutInProgress(ctx, keys, input.Timeout); err != nil {
 			enricher.logger.Warn(fmt.Sprintf("identity enrichment cache in-progress write failed: %v", err))
 		}
+		return enricher.execute(ctx, input, keys, release)
 	}
-
-	result, err := enricher.resolve(ctx, input)
-	if err != nil {
-		return Result{}, err
-	}
-	if len(result.EIDs) > 0 {
-		if err := enricher.cache.PutResolved(ctx, keys, result); err != nil {
-			enricher.logger.Warn(fmt.Sprintf("identity enrichment cache resolved write failed: %v", err))
-		}
-		return result, nil
-	}
-
-	metadata := ResultMetadata{
-		CacheTTL:         result.CacheTTL,
-		ABTestUUID:       result.ABTestUUID,
-		TerminationCause: result.TerminationCause,
-	}
-	if err := enricher.cache.PutNegative(ctx, keys, metadata); err != nil {
-		enricher.logger.Warn(fmt.Sprintf("identity enrichment cache negative write failed: %v", err))
-	}
-	return result, nil
 }
 
-func (enricher *enricher) resolve(ctx context.Context, input Request) (Result, error) {
-	requestURL, consent := buildS2SRequest(input)
-	requestContext, cancel := context.WithTimeout(ctx, input.Timeout)
-	started := time.Now()
-	response, err := enricher.s2s.Resolve(requestContext, requestURL, consent)
-	duration := time.Since(started)
-	cancel()
+func (enricher *enricher) executeWithAdmission(ctx context.Context, input Request, keys []CacheKey) (Result, error) {
+	release, admitted := enricher.acquireBackground(input)
+	if !admitted {
+		enricher.metrics.NotEnriched(input.PartnerID, ReasonBackgroundLimit)
+		return Result{Outcome: OutcomeBackgroundLimit}, nil
+	}
+	return enricher.execute(ctx, input, keys, release)
+}
 
-	enricher.metrics.APIRequestDuration(input.PartnerID, duration)
+func (enricher *enricher) acquireBackground(input Request) (func(), bool) {
+	_, mode := normalizeWaitTimeout(input.Timeout, input.WaitTimeout)
+	if mode == WaitModeSync {
+		return nil, true
+	}
+	if !enricher.limiter.TryAcquire() {
+		return nil, false
+	}
+	return func() {
+		enricher.limiter.Release()
+	}, true
+}
+
+func (enricher *enricher) execute(ctx context.Context, input Request, keys []CacheKey, release func()) (Result, error) {
+	prepared := prepareResolution(input, keys)
+	wait, mode := normalizeWaitTimeout(input.Timeout, input.WaitTimeout)
+	if mode != WaitModeSync {
+		ctx = context.WithoutCancel(ctx)
+	}
+	completion := enricher.startPrepared(ctx, prepared, release)
+	if mode == WaitModeSync {
+		completed := <-completion
+		return completed.result, completed.err
+	}
+	if wait == 0 {
+		enricher.metrics.NotEnriched(input.PartnerID, ReasonWaitExpired)
+		return Result{Outcome: OutcomeWaitExpired}, nil
+	}
+
+	timer := time.NewTimer(wait)
+	defer stopAndDrainTimer(timer)
+	select {
+	case completed := <-completion:
+		return completed.result, completed.err
+	case <-timer.C:
+		// Prefer a result that completed at the wait boundary over reporting it
+		// as late merely because select chose the timer case.
+		select {
+		case completed := <-completion:
+			return completed.result, completed.err
+		default:
+			enricher.metrics.NotEnriched(input.PartnerID, ReasonWaitExpired)
+			return Result{Outcome: OutcomeWaitExpired}, nil
+		}
+	}
+}
+
+func stopAndDrainTimer(timer *time.Timer) {
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+}
+
+func prepareResolution(input Request, keys []CacheKey) preparedResolution {
+	requestURL, consent := buildS2SRequest(input)
+	return preparedResolution{
+		partnerID:  input.PartnerID,
+		requestURL: requestURL,
+		consent:    consent,
+		timeout:    input.Timeout,
+		cacheKeys:  append([]CacheKey(nil), keys...),
+	}
+}
+
+func (enricher *enricher) startPrepared(
+	ctx context.Context,
+	prepared preparedResolution,
+	release func(),
+) <-chan resolutionCompletion {
+	completed := make(chan resolutionCompletion, 1)
+	go func() {
+		if release != nil {
+			defer release()
+		}
+		result, err := enricher.executePrepared(ctx, prepared)
+		completed <- resolutionCompletion{result: result, err: err}
+	}()
+	return completed
+}
+
+func (enricher *enricher) executePrepared(ctx context.Context, prepared preparedResolution) (Result, error) {
+	requestContext, cancel := context.WithTimeout(ctx, prepared.timeout)
+	defer cancel()
+
+	started := time.Now()
+	response, err := enricher.s2s.Resolve(requestContext, prepared.requestURL, prepared.consent)
+	duration := time.Since(started)
+
+	enricher.metrics.APIRequestDuration(prepared.partnerID, duration)
 	if err != nil {
 		kind, status := classifyS2SError(err)
 		enricher.logger.Warn(fmt.Sprintf(
 			"identity enrichment S2S request failed: kind=%s status=%d: %v",
 			kind, status, err,
 		))
-		enricher.metrics.APIError(input.PartnerID, kind, status)
+		enricher.metrics.APIError(prepared.partnerID, kind, status)
 		return Result{}, err
 	}
 
-	enricher.metrics.APISuccess(input.PartnerID)
+	enricher.metrics.APISuccess(prepared.partnerID)
 	result := Result{
 		EIDs:             response.EIDs(),
 		CacheTTL:         response.TTL(),
@@ -143,13 +237,44 @@ func (enricher *enricher) resolve(ctx context.Context, input Request) (Result, e
 	}
 	if len(result.EIDs) == 0 {
 		result.Outcome = OutcomeNoIDs
-		enricher.metrics.NotEnriched(input.PartnerID, ReasonNoIDs)
+		enricher.metrics.NotEnriched(prepared.partnerID, ReasonNoIDs)
+		writeContext, cancelWrite := cacheWriteContext(ctx, prepared.timeout)
+		defer cancelWrite()
+		enricher.putNegative(writeContext, prepared.cacheKeys, result)
 		return result, nil
 	}
 
 	result.Outcome = OutcomeEnriched
-	enricher.metrics.Enriched(input.PartnerID)
+	enricher.metrics.Enriched(prepared.partnerID)
+	if len(prepared.cacheKeys) > 0 {
+		writeContext, cancelWrite := cacheWriteContext(ctx, prepared.timeout)
+		defer cancelWrite()
+		if err := enricher.cache.PutResolved(writeContext, prepared.cacheKeys, result); err != nil {
+			enricher.logger.Warn(fmt.Sprintf("identity enrichment cache resolved write failed: %v", err))
+		}
+	}
 	return result, nil
+}
+
+// cacheWriteContext gives the cache write a budget of its own. The call that
+// just finished may have spent the whole request timeout, and filling the cache
+// is the reason it was allowed to outlive the auction that started it.
+func cacheWriteContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, timeout)
+}
+
+func (enricher *enricher) putNegative(ctx context.Context, keys []CacheKey, result Result) {
+	if len(keys) == 0 {
+		return
+	}
+	metadata := ResultMetadata{
+		CacheTTL:         result.CacheTTL,
+		ABTestUUID:       result.ABTestUUID,
+		TerminationCause: result.TerminationCause,
+	}
+	if err := enricher.cache.PutNegative(ctx, keys, metadata); err != nil {
+		enricher.logger.Warn(fmt.Sprintf("identity enrichment cache negative write failed: %v", err))
+	}
 }
 
 func classifyS2SError(err error) (kind string, status int) {
