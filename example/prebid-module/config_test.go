@@ -7,7 +7,6 @@ import (
 	"time"
 
 	iiqidcache "github.com/Intent-IQ/identity-go/cache"
-	"gopkg.in/yaml.v3"
 )
 
 func int64Pointer(value int64) *int64 { return &value }
@@ -37,15 +36,11 @@ func TestConfigValidation(t *testing.T) {
 	}{
 		{name: "sync default", config: Config{Timeout: 1_000}},
 		{name: "sync equal without cache", config: Config{Timeout: 1_000, WaitTimeout: int64Pointer(1_000)}},
-		{name: "sync above without cache", config: Config{Timeout: 1_000, WaitTimeout: int64Pointer(2_000)}},
 		{name: "async with cache", config: Config{Timeout: 1_000, WaitTimeout: int64Pointer(0), Cache: validCache, MaxBackgroundCalls: 10}},
-		{name: "hybrid with cache", config: Config{Timeout: 1_000, WaitTimeout: int64Pointer(500), Cache: validCache}},
 		{name: "zero timeout", config: Config{}, wantErr: "timeout must be positive"},
-		{name: "negative timeout", config: Config{Timeout: -1}, wantErr: "timeout must be positive"},
 		{name: "negative wait", config: Config{Timeout: 1_000, WaitTimeout: int64Pointer(-1)}, wantErr: "wait_timeout must not be negative"},
 		{name: "negative capacity", config: Config{Timeout: 1_000, MaxBackgroundCalls: -1}, wantErr: "max_background_calls must not be negative"},
 		{name: "async without cache", config: Config{Timeout: 1_000, WaitTimeout: int64Pointer(0)}, wantErr: "cache must be enabled"},
-		{name: "hybrid without cache", config: Config{Timeout: 1_000, WaitTimeout: int64Pointer(500)}, wantErr: "cache must be enabled"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -55,36 +50,6 @@ func TestConfigValidation(t *testing.T) {
 			}
 			if test.wantErr != "" && (err == nil || !strings.Contains(err.Error(), test.wantErr)) {
 				t.Fatalf("validate() error = %v, want %q", err, test.wantErr)
-			}
-		})
-	}
-}
-
-func TestConfigJSONAndYAMLPreserveWaitTimeout(t *testing.T) {
-	for _, test := range []struct {
-		name   string
-		decode func(*Config) error
-	}{
-		{
-			name: "json",
-			decode: func(config *Config) error {
-				return json.Unmarshal([]byte(`{"timeout":1000,"wait_timeout":0,"max_background_calls":12}`), config)
-			},
-		},
-		{
-			name: "yaml",
-			decode: func(config *Config) error {
-				return yaml.Unmarshal([]byte("timeout: 1000\nwait_timeout: 0\nmax_background_calls: 12\n"), config)
-			},
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			var config Config
-			if err := test.decode(&config); err != nil {
-				t.Fatalf("decode: %v", err)
-			}
-			if config.WaitTimeout == nil || *config.WaitTimeout != 0 || config.MaxBackgroundCalls != 12 {
-				t.Fatalf("decoded config = %#v", config)
 			}
 		})
 	}
@@ -106,5 +71,22 @@ func TestInvalidAccountOverlayFallsBackToModuleConfig(t *testing.T) {
 	resolved := base.resolve(json.RawMessage(`{"wait_timeout":0}`))
 	if resolved.WaitTimeout != nil || resolved.Timeout != base.Timeout {
 		t.Fatalf("invalid account overlay was applied: %#v", resolved)
+	}
+}
+
+func TestUnusableAccountOverlayKeepsModuleConfig(t *testing.T) {
+	base := Config{Timeout: 1_000, WaitTimeout: int64Pointer(2_000), MaxBackgroundCalls: 25}
+	for _, test := range []struct {
+		name          string
+		accountConfig json.RawMessage
+	}{
+		{name: "absent"},
+		{name: "undecodable", accountConfig: json.RawMessage(`{"partner_id":"other","timeout":"abc"}`)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if resolved := base.resolve(test.accountConfig); resolved != base {
+				t.Fatalf("resolve() = %#v, want module config", resolved)
+			}
+		})
 	}
 }

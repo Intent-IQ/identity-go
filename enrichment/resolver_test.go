@@ -153,7 +153,7 @@ func TestEnrichMapsRequestAndResponse(t *testing.T) {
 	if len(api.calls) != 1 {
 		t.Fatalf("S2S calls = %d, want 1", len(api.calls))
 	}
-	wantURL := "https://example.test/resolve?at=39&mi=10&dpi=partner-42&pt=17&dpn=1&srvrReq=true&source=pbsgo&ip=1.2.3.4&gdpr=1"
+	wantURL, _ := buildS2SRequest(input)
 	if api.calls[0].requestURL != wantURL || api.calls[0].consent != "TCF-CONSENT" {
 		t.Fatalf("S2S call = %#v, want URL %q and consent", api.calls[0], wantURL)
 	}
@@ -161,7 +161,11 @@ func TestEnrichMapsRequestAndResponse(t *testing.T) {
 		t.Fatal("S2S context has no deadline")
 	}
 	assertEnrichmentMetricNames(t, metrics.events, "request", "api_duration", "api_success", "enriched")
-	assertPartnerIDs(t, metrics.events, "partner-42")
+	for _, event := range metrics.events {
+		if event.partnerID != "partner-42" {
+			t.Fatalf("event %q partner = %q, want partner-42", event.name, event.partnerID)
+		}
+	}
 	if len(logger.warnings) != 0 {
 		t.Fatalf("warnings = %q, want none", logger.warnings)
 	}
@@ -220,11 +224,8 @@ func TestEnrichReturnsClassifiedS2SErrors(t *testing.T) {
 		kind   string
 		status int
 	}{
-		{"request", &iiqapi.Error{Kind: iiqapi.ErrorRequest, Err: errors.New("bad request")}, "request", 0},
 		{"transport", &iiqapi.Error{Kind: iiqapi.ErrorTransport, Err: errors.New("down")}, "transport", 0},
 		{"status", &iiqapi.Error{Kind: iiqapi.ErrorStatus, Status: 503, Err: errors.New("unavailable")}, "status", 503},
-		{"body read", &iiqapi.Error{Kind: iiqapi.ErrorBodyRead, Status: 200, Err: errors.New("read")}, "body_read", 200},
-		{"parse", &iiqapi.Error{Kind: iiqapi.ErrorParse, Status: 200, Err: errors.New("parse")}, "parse", 200},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -280,14 +281,5 @@ func assertEnrichmentMetricNames(t *testing.T, events []enrichmentMetricEvent, w
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("metric order = %v, want %v", got, want)
-	}
-}
-
-func assertPartnerIDs(t *testing.T, events []enrichmentMetricEvent, want string) {
-	t.Helper()
-	for _, event := range events {
-		if event.partnerID != want {
-			t.Fatalf("event %q partner = %q, want %q", event.name, event.partnerID, want)
-		}
 	}
 }

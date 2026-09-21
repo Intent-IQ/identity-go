@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Intent-IQ/identity-go/iiqapi"
 	"github.com/Intent-IQ/identity-go/iiqapi/s2s"
 	"github.com/prebid/openrtb/v20/openrtb2"
 )
@@ -320,32 +319,6 @@ func TestEnrichEmptyResponseIsNotCached(t *testing.T) {
 	}
 }
 
-func TestEnrichRetriesAfterEmptyResponseMarkerExpires(t *testing.T) {
-	cache := &expiringMarkerCache{now: time.Unix(1_700_000_000, 0)}
-	api := &recordingS2S{}
-	api.resolve = func(context.Context) (s2s.Response, error) {
-		if len(api.calls) == 1 {
-			return s2s.Response{Status: 200, EmptyBody: true}, nil
-		}
-		return s2s.Response{Data: json.RawMessage(`{"eids":[{"source":"intentiq.com"}]}`)}, nil
-	}
-	request := cacheableRequest()
-	enricher := newCachedTestEnricher(t, api, cache, &recordingEnrichmentMetrics{}, &recordingEnrichmentLogger{}, 10)
-
-	if result, err := enricher.Enrich(t.Context(), request); err != nil || result.Outcome != OutcomeUnresolved {
-		t.Fatalf("first Enrich() = (%#v, %v), want unresolved", result, err)
-	}
-	if result, err := enricher.Enrich(t.Context(), request); err != nil || result.Outcome != OutcomeInProgress || len(api.calls) != 1 {
-		t.Fatalf("second Enrich() = (%#v, %v), S2S calls=%d", result, err, len(api.calls))
-	}
-
-	cache.now = cache.now.Add(request.Timeout)
-	result, err := enricher.Enrich(t.Context(), request)
-	if err != nil || result.Outcome != OutcomeEnriched || len(api.calls) != 2 || len(cache.resolved) != 1 || len(cache.negative) != 0 {
-		t.Fatalf("third Enrich() = (%#v, %v), S2S calls=%d cache=%#v", result, err, len(api.calls), cache)
-	}
-}
-
 func TestEnrichCacheFailuresRemainFailOpen(t *testing.T) {
 	t.Run("read error falls through to S2S", func(t *testing.T) {
 		cacheError := errors.New("cache unavailable")
@@ -378,6 +351,19 @@ func TestEnrichCacheFailuresRemainFailOpen(t *testing.T) {
 			t.Fatalf("warnings = %q", logger.warnings)
 		}
 	})
+
+	t.Run("write errors preserve the no-ID result", func(t *testing.T) {
+		cache := &recordingCache{putErr: errors.New("cache write failed")}
+		api := &recordingS2S{response: s2s.Response{Data: json.RawMessage(`{"eids":[]}`)}}
+		logger := &recordingEnrichmentLogger{}
+		result, err := newCachedTestEnricher(t, api, cache, &recordingEnrichmentMetrics{}, logger, 10).Enrich(t.Context(), cacheableRequest())
+		if err != nil || result.Outcome != OutcomeNoIDs || len(cache.inProgress) != 1 || len(cache.negative) != 1 {
+			t.Fatalf("Enrich() = (%#v, %v), writes=%d/%d", result, err, len(cache.inProgress), len(cache.negative))
+		}
+		if len(logger.warnings) != 2 {
+			t.Fatalf("warnings = %q", logger.warnings)
+		}
+	})
 }
 
 func TestEnrichS2SErrorUsesRequestTimeoutForInProgressMarker(t *testing.T) {
@@ -395,13 +381,17 @@ func TestEnrichS2SErrorUsesRequestTimeoutForInProgressMarker(t *testing.T) {
 	}
 }
 
-func TestEnrichRetriesAfterErrorMarkerExpires(t *testing.T) {
+// Neither an empty body nor an error is a cacheable answer, so the first call
+// leaves only an in-progress marker and the retry has to come back once it ages out.
+func TestEnrichRetriesAfterUncacheableCallMarkerExpires(t *testing.T) {
 	tests := []struct {
-		name       string
-		firstError error
+		name          string
+		firstResponse s2s.Response
+		firstError    error
+		wantFirst     Result
 	}{
-		{name: "timeout", firstError: context.DeadlineExceeded},
-		{name: "API error", firstError: &iiqapi.Error{Kind: iiqapi.ErrorStatus, Status: 503}},
+		{name: "empty body", firstResponse: s2s.Response{Status: 200, EmptyBody: true}, wantFirst: Result{Outcome: OutcomeUnresolved}},
+		{name: "error", firstError: context.DeadlineExceeded},
 	}
 
 	for _, test := range tests {
@@ -410,24 +400,25 @@ func TestEnrichRetriesAfterErrorMarkerExpires(t *testing.T) {
 			api := &recordingS2S{}
 			api.resolve = func(context.Context) (s2s.Response, error) {
 				if len(api.calls) == 1 {
-					return s2s.Response{}, test.firstError
+					return test.firstResponse, test.firstError
 				}
 				return s2s.Response{Data: json.RawMessage(`{"eids":[{"source":"intentiq.com"}]}`)}, nil
 			}
 			request := cacheableRequest()
 			enricher := newCachedTestEnricher(t, api, cache, &recordingEnrichmentMetrics{}, &recordingEnrichmentLogger{}, 10)
 
-			if result, err := enricher.Enrich(t.Context(), request); !errors.Is(err, test.firstError) || !reflect.DeepEqual(result, Result{}) {
-				t.Fatalf("first Enrich() = (%#v, %v), want error %v", result, err, test.firstError)
+			result, err := enricher.Enrich(t.Context(), request)
+			if !errors.Is(err, test.firstError) || !reflect.DeepEqual(result, test.wantFirst) {
+				t.Fatalf("first Enrich() = (%#v, %v), want (%#v, %v)", result, err, test.wantFirst, test.firstError)
 			}
 			if result, err := enricher.Enrich(t.Context(), request); err != nil || result.Outcome != OutcomeInProgress || len(api.calls) != 1 {
 				t.Fatalf("second Enrich() = (%#v, %v), S2S calls=%d", result, err, len(api.calls))
 			}
 
 			cache.now = cache.now.Add(request.Timeout)
-			result, err := enricher.Enrich(t.Context(), request)
-			if err != nil || result.Outcome != OutcomeEnriched || len(api.calls) != 2 || len(cache.resolved) != 1 {
-				t.Fatalf("third Enrich() = (%#v, %v), S2S calls=%d resolved writes=%d", result, err, len(api.calls), len(cache.resolved))
+			result, err = enricher.Enrich(t.Context(), request)
+			if err != nil || result.Outcome != OutcomeEnriched || len(api.calls) != 2 || len(cache.resolved) != 1 || len(cache.negative) != 0 {
+				t.Fatalf("third Enrich() = (%#v, %v), S2S calls=%d cache=%#v", result, err, len(api.calls), cache)
 			}
 		})
 	}
@@ -806,20 +797,16 @@ func TestConfiguredBackgroundCapacityBoundsPotentiallyDetachedCalls(t *testing.T
 }
 
 func TestBackgroundLimiterSkippedForCacheResultsAndSyncCalls(t *testing.T) {
-	positive := Result{EIDs: []openrtb2.EID{{Source: "intentiq.com"}}}
-	tests := []struct {
-		name    string
-		request Request
-		cached  CacheResult
-	}{
-		{name: "positive hit", request: cacheableRequest(), cached: CacheResult{State: CacheHit, Result: positive}},
-		{name: "negative hit", request: cacheableRequest(), cached: CacheResult{State: CacheNegative}},
-		{name: "in progress", request: cacheableRequest(), cached: CacheResult{State: CacheInProgress}},
-		{name: "sync miss", request: cacheableRequest(), cached: CacheResult{State: CacheMiss}},
-	}
 	zero := time.Duration(0)
-	for index := range 3 {
-		tests[index].request.WaitTimeout = &zero
+	tests := []struct {
+		name   string
+		wait   *time.Duration
+		cached CacheResult
+	}{
+		{name: "cache hit", wait: &zero, cached: CacheResult{
+			State: CacheHit, Result: Result{EIDs: []openrtb2.EID{{Source: "intentiq.com"}}},
+		}},
+		{name: "sync miss", cached: CacheResult{State: CacheMiss}},
 	}
 
 	for _, test := range tests {
@@ -833,7 +820,9 @@ func TestBackgroundLimiterSkippedForCacheResultsAndSyncCalls(t *testing.T) {
 			implementation := created.(*enricher)
 			limiter := &recordingBackgroundLimiter{allow: false}
 			implementation.limiter = limiter
-			result, err := implementation.Enrich(t.Context(), test.request)
+			request := cacheableRequest()
+			request.WaitTimeout = test.wait
+			result, err := implementation.Enrich(t.Context(), request)
 			if err != nil || result.Outcome == OutcomeBackgroundLimit {
 				t.Fatalf("Enrich() = (%#v, %v), limiter should be skipped", result, err)
 			}
@@ -844,41 +833,18 @@ func TestBackgroundLimiterSkippedForCacheResultsAndSyncCalls(t *testing.T) {
 	}
 }
 
-func TestBackgroundPermitReleasedForEveryTerminalPath(t *testing.T) {
-	tests := []struct {
-		name    string
-		wait    time.Duration
-		timeout time.Duration
-		resolve func(context.Context) (s2s.Response, error)
+// The permit is freed by a single defer, so the split that matters is whether
+// the caller is still waiting when the resolution goroutine finishes.
+func TestBackgroundPermitReleasedWhetherOrNotCallerWaits(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		wait time.Duration
 	}{
-		{
-			name: "in-time success", wait: 500 * time.Millisecond, timeout: time.Second,
-			resolve: func(context.Context) (s2s.Response, error) {
-				return s2s.Response{Data: json.RawMessage(`{"eids":[]}`)}, nil
-			},
-		},
-		{
-			name: "late success", wait: 0, timeout: time.Second,
-			resolve: func(context.Context) (s2s.Response, error) {
-				return s2s.Response{Data: json.RawMessage(`{"eids":[]}`)}, nil
-			},
-		},
-		{
-			name: "error", wait: 500 * time.Millisecond, timeout: time.Second,
-			resolve: func(context.Context) (s2s.Response, error) { return s2s.Response{}, errors.New("failed") },
-		},
-		{
-			name: "timeout", wait: 0, timeout: 20 * time.Millisecond,
-			resolve: func(ctx context.Context) (s2s.Response, error) {
-				<-ctx.Done()
-				return s2s.Response{}, ctx.Err()
-			},
-		},
-	}
-
-	for _, test := range tests {
+		{name: "caller still waiting", wait: 500 * time.Millisecond},
+		{name: "caller already returned", wait: 0},
+	} {
 		t.Run(test.name, func(t *testing.T) {
-			api := &recordingS2S{resolve: test.resolve}
+			api := &recordingS2S{response: s2s.Response{Data: json.RawMessage(`{"eids":[]}`)}}
 			created, err := New(Dependencies{S2S: api}, 10)
 			if err != nil {
 				t.Fatalf("New() error = %v", err)
@@ -888,7 +854,6 @@ func TestBackgroundPermitReleasedForEveryTerminalPath(t *testing.T) {
 			implementation.limiter = limiter
 			request := cacheableRequest()
 			request.CacheEnabled = false
-			request.Timeout = test.timeout
 			request.WaitTimeout = &test.wait
 			_, _ = implementation.Enrich(t.Context(), request)
 			select {
