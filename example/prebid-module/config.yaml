@@ -7,7 +7,7 @@ hooks:
         partner_id: example-partner
         api_endpoint: https://api.intentiq.com/profiles_engine/ProfilesEngineServlet
         reports_endpoint: https://reports.intentiq.com/report
-        timeout: 1000 # milliseconds
+        timeout: 1500 # milliseconds
 
         # How long the auction waits for enrichment. Omit this key, or set it
         # greater than or equal to timeout, to preserve synchronous behavior.
@@ -66,13 +66,13 @@ hooks:
             # group timeout equal to the module timeout races the module's own
             # fail-open path and throws away enrichment that did arrive.
             groups:
-              - timeout: 1500
+              - timeout: 2000
                 hook_sequence:
                   - module_code: intentiq.identity
                     hook_impl_code: HandleProcessedAuctionHook
           auction_response:
             groups:
-              - timeout: 1500
+              - timeout: 2000
                 hook_sequence:
                   - module_code: intentiq.identity
                     hook_impl_code: HandleAuctionResponseHook

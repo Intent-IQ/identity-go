@@ -229,6 +229,11 @@ func (enricher *enricher) executePrepared(ctx context.Context, prepared prepared
 	}
 
 	enricher.metrics.APISuccess(prepared.partnerID)
+	if response.EmptyBody {
+		enricher.metrics.NotEnriched(prepared.partnerID, ReasonUnresolved)
+		return Result{Outcome: OutcomeUnresolved}, nil
+	}
+
 	result := Result{
 		EIDs:             response.EIDs(),
 		CacheTTL:         response.TTL(),

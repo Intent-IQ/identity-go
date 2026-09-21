@@ -301,6 +301,51 @@ func TestEnrichCacheMissStoresNegativeMetadata(t *testing.T) {
 	}
 }
 
+func TestEnrichEmptyResponseIsNotCached(t *testing.T) {
+	api := &recordingS2S{response: s2s.Response{Status: 200, EmptyBody: true}}
+	cache := &recordingCache{result: CacheResult{State: CacheMiss, Layer: CacheLayerNone}}
+	metrics := &recordingEnrichmentMetrics{}
+
+	result, err := newCachedTestEnricher(t, api, cache, metrics, &recordingEnrichmentLogger{}, 10).Enrich(t.Context(), cacheableRequest())
+
+	if err != nil || result.Outcome != OutcomeUnresolved {
+		t.Fatalf("Enrich() = (%#v, %v), want unresolved", result, err)
+	}
+	if len(cache.resolved) != 0 || len(cache.negative) != 0 {
+		t.Fatalf("cache writes = resolved %#v negative %#v, want none", cache.resolved, cache.negative)
+	}
+	assertEnrichmentMetricNames(t, metrics.events, "request", "cache_lookup", "api_duration", "api_success", "not_enriched")
+	if metrics.events[4].reason != string(ReasonUnresolved) {
+		t.Fatalf("not-enriched reason = %q, want %q", metrics.events[4].reason, ReasonUnresolved)
+	}
+}
+
+func TestEnrichRetriesAfterEmptyResponseMarkerExpires(t *testing.T) {
+	cache := &expiringMarkerCache{now: time.Unix(1_700_000_000, 0)}
+	api := &recordingS2S{}
+	api.resolve = func(context.Context) (s2s.Response, error) {
+		if len(api.calls) == 1 {
+			return s2s.Response{Status: 200, EmptyBody: true}, nil
+		}
+		return s2s.Response{Data: json.RawMessage(`{"eids":[{"source":"intentiq.com"}]}`)}, nil
+	}
+	request := cacheableRequest()
+	enricher := newCachedTestEnricher(t, api, cache, &recordingEnrichmentMetrics{}, &recordingEnrichmentLogger{}, 10)
+
+	if result, err := enricher.Enrich(t.Context(), request); err != nil || result.Outcome != OutcomeUnresolved {
+		t.Fatalf("first Enrich() = (%#v, %v), want unresolved", result, err)
+	}
+	if result, err := enricher.Enrich(t.Context(), request); err != nil || result.Outcome != OutcomeInProgress || len(api.calls) != 1 {
+		t.Fatalf("second Enrich() = (%#v, %v), S2S calls=%d", result, err, len(api.calls))
+	}
+
+	cache.now = cache.now.Add(request.Timeout)
+	result, err := enricher.Enrich(t.Context(), request)
+	if err != nil || result.Outcome != OutcomeEnriched || len(api.calls) != 2 || len(cache.resolved) != 1 || len(cache.negative) != 0 {
+		t.Fatalf("third Enrich() = (%#v, %v), S2S calls=%d cache=%#v", result, err, len(api.calls), cache)
+	}
+}
+
 func TestEnrichCacheFailuresRemainFailOpen(t *testing.T) {
 	t.Run("read error falls through to S2S", func(t *testing.T) {
 		cacheError := errors.New("cache unavailable")

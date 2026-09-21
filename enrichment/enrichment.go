@@ -27,11 +27,16 @@ type Request struct {
 type Outcome string
 
 const (
-	OutcomeEnriched        Outcome = "enriched"
-	OutcomeNoIDs           Outcome = "no_ids"
-	OutcomeCachedNoIDs     Outcome = "no_ids_cached"
-	OutcomeInProgress      Outcome = "in_progress"
-	OutcomeNoEndpoint      Outcome = "no_endpoint"
+	OutcomeEnriched    Outcome = "enriched"
+	OutcomeNoIDs       Outcome = "no_ids"
+	OutcomeCachedNoIDs Outcome = "no_ids_cached"
+
+	// OutcomeUnresolved represents a successful S2S response with an empty body.
+	// It remains distinct from OutcomeNoIDs because it must not be negatively cached.
+	OutcomeUnresolved Outcome = "unresolved"
+
+	OutcomeInProgress Outcome = "in_progress"
+	OutcomeNoEndpoint Outcome = "no_endpoint"
 	OutcomeWaitExpired     Outcome = "wait_expired"
 	OutcomeBackgroundLimit Outcome = "background_limit"
 )

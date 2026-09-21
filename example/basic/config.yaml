@@ -1,5 +1,5 @@
-partner_id: 1575370072
-timeout_ms: 500
+partner_id: example-partner
+timeout_ms: 1500
 api_endpoint: http://localhost:9098/profiles_engine/ProfilesEngineServlet
 reports_endpoint: http://localhost:9098/reports
 
