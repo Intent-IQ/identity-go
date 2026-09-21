@@ -517,12 +517,12 @@ func TestExecuteDetachedFromCallerThroughCacheWrite(t *testing.T) {
 				err    error
 			}
 			finished := make(chan executionResult, 1)
-			plan, err := enricher.planRequest(request)
+			plan, err := enricher.executionPlanFor(request)
 			if err != nil {
-				t.Fatalf("planRequest() error = %v", err)
+				t.Fatalf("executionPlanFor() error = %v", err)
 			}
 			go func() {
-				result, err := enricher.schedule(parent, plan, newResolutionJob(request, keys), false)
+				result, err := enricher.schedule(parent, plan, newResolutionJob(request, keys))
 				finished <- executionResult{result: result, err: err}
 			}()
 

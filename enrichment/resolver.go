@@ -45,6 +45,10 @@ type resolutionJob struct {
 	cacheKeys  []CacheKey
 }
 
+func (job resolutionJob) hasCacheKeys() bool {
+	return len(job.cacheKeys) > 0
+}
+
 type resolutionCompletion struct {
 	result Result
 	err    error
@@ -73,33 +77,46 @@ func New(deps Dependencies, maxCacheKeys int) (Enricher, error) {
 	}, nil
 }
 
-func (e *enricher) Enrich(ctx context.Context, input Request) (Result, error) {
-	e.metrics.Request(input.PartnerID)
+func (e *enricher) Enrich(ctx context.Context, req Request) (Result, error) {
+	e.metrics.Request(req.PartnerID)
 
-	if !notBlank(input.Endpoint) {
-		e.metrics.NotEnriched(input.PartnerID, ReasonNoEndpoint)
+	if !notBlank(req.Endpoint) {
+		e.metrics.NotEnriched(req.PartnerID, ReasonNoEndpoint)
 		return Result{Outcome: OutcomeNoEndpoint}, nil
 	}
-	if input.Auction == nil {
+	if req.Auction == nil {
 		return Result{}, nil
 	}
-	plan, err := e.planRequest(input)
+
+	plan, err := e.executionPlanFor(req)
 	if err != nil {
 		return Result{}, err
 	}
+	keys, err := e.cacheKeysFor(req, plan)
+	if err != nil {
+		return Result{}, err
+	}
+	if result, found := e.lookupCache(ctx, req.PartnerID, keys); found {
+		return result, nil
+	}
+	return e.schedule(ctx, plan, newResolutionJob(req, keys))
+}
 
+func (e *enricher) cacheKeysFor(input Request, plan executionPlan) ([]CacheKey, error) {
 	if e.cache == nil || !input.CacheEnabled {
-		return e.schedule(ctx, plan, newResolutionJob(input, nil), false)
+		return nil, nil
 	}
-
 	keys := extractCacheKeys(input.Auction, e.maxCacheKeys)
-	if len(keys) == 0 {
-		if plan.mode != WaitModeSync {
-			return Result{}, errNonSyncCacheKeysRequired
-		}
-		return e.schedule(ctx, plan, newResolutionJob(input, nil), false)
+	if len(keys) == 0 && plan.mode != WaitModeSync {
+		return nil, errNonSyncCacheKeysRequired
 	}
+	return keys, nil
+}
 
+func (e *enricher) lookupCache(ctx context.Context, partnerID string, keys []CacheKey) (Result, bool) {
+	if len(keys) == 0 {
+		return Result{}, false
+	}
 	cached, err := e.cache.Get(ctx, keys)
 	if err != nil {
 		e.logger.Warn(fmt.Sprintf("identity enrichment cache read failed: %v", err))
@@ -108,44 +125,44 @@ func (e *enricher) Enrich(ctx context.Context, input Request) (Result, error) {
 
 	switch cached.State {
 	case CacheHit:
-		e.metrics.CacheLookup(input.PartnerID, CacheLookupHit, cached.Layer)
+		e.metrics.CacheLookup(partnerID, CacheLookupHit, cached.Layer)
 		result := cached.Result
 		result.Outcome = OutcomeEnriched
 		result.CacheLayer = cached.Layer
-		e.metrics.Enriched(input.PartnerID)
-		return result, nil
+		e.metrics.Enriched(partnerID)
+		return result, true
 	case CacheNegative:
-		e.metrics.CacheLookup(input.PartnerID, CacheLookupMiss, cached.Layer)
+		e.metrics.CacheLookup(partnerID, CacheLookupMiss, cached.Layer)
 		result := cached.Result
 		result.EIDs = nil
 		result.Outcome = OutcomeCachedNoIDs
 		result.CacheLayer = cached.Layer
-		e.metrics.NotEnriched(input.PartnerID, ReasonNoIDsCached)
-		return result, nil
+		e.metrics.NotEnriched(partnerID, ReasonNoIDsCached)
+		return result, true
 	case CacheInProgress:
-		e.metrics.CacheLookup(input.PartnerID, CacheLookupMiss, cached.Layer)
-		e.metrics.NotEnriched(input.PartnerID, ReasonInProgress)
-		return Result{Outcome: OutcomeInProgress, CacheLayer: cached.Layer}, nil
+		e.metrics.CacheLookup(partnerID, CacheLookupMiss, cached.Layer)
+		e.metrics.NotEnriched(partnerID, ReasonInProgress)
+		return Result{Outcome: OutcomeInProgress, CacheLayer: cached.Layer}, true
 	default:
-		e.metrics.CacheLookup(input.PartnerID, CacheLookupMiss, cached.Layer)
-		return e.schedule(ctx, plan, newResolutionJob(input, keys), true)
+		e.metrics.CacheLookup(partnerID, CacheLookupMiss, cached.Layer)
+		return Result{}, false
 	}
 }
 
-func (e *enricher) planRequest(input Request) (executionPlan, error) {
-	if input.Timeout <= 0 {
+func (e *enricher) executionPlanFor(req Request) (executionPlan, error) {
+	if req.Timeout <= 0 {
 		return executionPlan{}, errTimeoutNotPositive
 	}
-	if input.WaitTimeout != nil && *input.WaitTimeout < 0 {
+	if req.WaitTimeout != nil && *req.WaitTimeout < 0 {
 		return executionPlan{}, errNegativeWaitTimeout
 	}
 
-	wait, mode := normalizeWaitTimeout(input.Timeout, input.WaitTimeout)
+	wait, mode := normalizeWaitTimeout(req.Timeout, req.WaitTimeout)
 	plan := executionPlan{mode: mode, wait: wait}
 	if mode == WaitModeSync {
 		return plan, nil
 	}
-	if e.cache == nil || !input.CacheEnabled {
+	if e.cache == nil || !req.CacheEnabled {
 		return executionPlan{}, errNonSyncCacheRequired
 	}
 	if cap(e.limiter) == 0 {
@@ -154,60 +171,30 @@ func (e *enricher) planRequest(input Request) (executionPlan, error) {
 	return plan, nil
 }
 
-func (e *enricher) schedule(
-	ctx context.Context,
-	plan executionPlan,
-	job resolutionJob,
-	markInProgress bool,
-) (Result, error) {
+func (e *enricher) schedule(ctx context.Context, plan executionPlan, job resolutionJob) (Result, error) {
 	if plan.mode == WaitModeSync {
-		e.markInProgress(ctx, job, markInProgress)
+		e.markInProgress(ctx, job)
 		return e.run(ctx, job)
 	}
-
 	if !e.limiter.TryAcquire() {
 		e.metrics.NotEnriched(job.partnerID, ReasonBackgroundLimit)
 		return Result{Outcome: OutcomeBackgroundLimit}, nil
 	}
 
-	e.markInProgress(ctx, job, markInProgress)
+	e.markInProgress(ctx, job)
 	completion := e.runBackground(context.WithoutCancel(ctx), job)
 	if plan.mode == WaitModeAsync {
-		e.metrics.NotEnriched(job.partnerID, ReasonWaitExpired)
-		return Result{Outcome: OutcomeWaitExpired}, nil
+		return e.waitExpired(job.partnerID)
 	}
 	return e.waitForResult(completion, plan.wait, job.partnerID)
 }
 
-func (e *enricher) markInProgress(ctx context.Context, job resolutionJob, enabled bool) {
-	if !enabled {
+func (e *enricher) markInProgress(ctx context.Context, job resolutionJob) {
+	if !job.hasCacheKeys() {
 		return
 	}
 	if err := e.cache.PutInProgress(ctx, job.cacheKeys, job.timeout); err != nil {
 		e.logger.Warn(fmt.Sprintf("identity enrichment cache in-progress write failed: %v", err))
-	}
-}
-
-func (e *enricher) waitForResult(
-	completion <-chan resolutionCompletion,
-	wait time.Duration,
-	partnerID string,
-) (Result, error) {
-	timer := time.NewTimer(wait)
-	defer stopAndDrainTimer(timer)
-	select {
-	case completed := <-completion:
-		return completed.result, completed.err
-	case <-timer.C:
-		// Prefer a result that completed at the wait boundary over reporting it
-		// as late merely because select chose the timer case.
-		select {
-		case completed := <-completion:
-			return completed.result, completed.err
-		default:
-			e.metrics.NotEnriched(partnerID, ReasonWaitExpired)
-			return Result{Outcome: OutcomeWaitExpired}, nil
-		}
 	}
 }
 
@@ -221,14 +208,35 @@ func (e *enricher) runBackground(ctx context.Context, job resolutionJob) <-chan 
 	return completed
 }
 
+func (e *enricher) waitForResult(completion <-chan resolutionCompletion, wait time.Duration, partnerID string) (Result, error) {
+	timer := time.NewTimer(wait)
+	defer stopAndDrainTimer(timer)
+	select {
+	case completed := <-completion:
+		return completed.result, completed.err
+	case <-timer.C:
+		// Prefer a result that completed at the wait boundary over reporting it
+		// as late merely because select chose the timer case.
+		select {
+		case completed := <-completion:
+			return completed.result, completed.err
+		default:
+			return e.waitExpired(partnerID)
+		}
+	}
+}
+
+func (e *enricher) waitExpired(partnerID string) (Result, error) {
+	e.metrics.NotEnriched(partnerID, ReasonWaitExpired)
+	return Result{Outcome: OutcomeWaitExpired}, nil
+}
+
 func (e *enricher) run(ctx context.Context, job resolutionJob) (Result, error) {
 	result, err := e.resolve(ctx, job)
 	if err != nil {
 		return Result{}, err
 	}
-	if result.Outcome != OutcomeUnresolved {
-		e.storeResult(ctx, job, result)
-	}
+	e.storeResult(ctx, job, result)
 	return result, nil
 }
 
@@ -275,32 +283,28 @@ func (e *enricher) resolve(ctx context.Context, job resolutionJob) (Result, erro
 }
 
 func (e *enricher) storeResult(ctx context.Context, job resolutionJob, result Result) {
-	if len(job.cacheKeys) == 0 {
+	if !job.hasCacheKeys() {
 		return
 	}
 
+	// Give persistence a fresh budget: resolution may have consumed the full
+	// S2S timeout, while warming the cache is the purpose of background work.
 	writeCtx, cancel := context.WithTimeout(ctx, job.timeout)
 	defer cancel()
-	if result.Outcome == OutcomeNoIDs {
-		e.putNegative(writeCtx, job.cacheKeys, result)
-		return
-	}
-	if err := e.cache.PutResolved(writeCtx, job.cacheKeys, result); err != nil {
-		e.logger.Warn(fmt.Sprintf("identity enrichment cache resolved write failed: %v", err))
-	}
-}
-
-func (e *enricher) putNegative(ctx context.Context, keys []CacheKey, result Result) {
-	if len(keys) == 0 {
-		return
-	}
-	metadata := ResultMetadata{
-		CacheTTL:         result.CacheTTL,
-		ABTestUUID:       result.ABTestUUID,
-		TerminationCause: result.TerminationCause,
-	}
-	if err := e.cache.PutNegative(ctx, keys, metadata); err != nil {
-		e.logger.Warn(fmt.Sprintf("identity enrichment cache negative write failed: %v", err))
+	switch result.Outcome {
+	case OutcomeEnriched:
+		if err := e.cache.PutResolved(writeCtx, job.cacheKeys, result); err != nil {
+			e.logger.Warn(fmt.Sprintf("identity enrichment cache resolved write failed: %v", err))
+		}
+	case OutcomeNoIDs:
+		metadata := ResultMetadata{
+			CacheTTL:         result.CacheTTL,
+			ABTestUUID:       result.ABTestUUID,
+			TerminationCause: result.TerminationCause,
+		}
+		if err := e.cache.PutNegative(writeCtx, job.cacheKeys, metadata); err != nil {
+			e.logger.Warn(fmt.Sprintf("identity enrichment cache negative write failed: %v", err))
+		}
 	}
 }
 
