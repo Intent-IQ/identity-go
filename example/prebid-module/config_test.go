@@ -36,10 +36,10 @@ func TestConfigValidation(t *testing.T) {
 	}{
 		{name: "sync default", config: Config{Timeout: 1_000}},
 		{name: "sync equal without cache", config: Config{Timeout: 1_000, WaitTimeout: int64Pointer(1_000)}},
-		{name: "async with cache", config: Config{Timeout: 1_000, WaitTimeout: int64Pointer(0), Cache: validCache, MaxBackgroundCalls: 10}},
+		{name: "async with cache", config: Config{Timeout: 1_000, WaitTimeout: int64Pointer(0), Cache: validCache, MaxBackgroundS2SCalls: 10}},
 		{name: "zero timeout", config: Config{}, wantErr: "timeout must be positive"},
 		{name: "negative wait", config: Config{Timeout: 1_000, WaitTimeout: int64Pointer(-1)}, wantErr: "wait_timeout must not be negative"},
-		{name: "negative capacity", config: Config{Timeout: 1_000, MaxBackgroundCalls: -1}, wantErr: "max_background_calls must not be negative"},
+		{name: "negative capacity", config: Config{Timeout: 1_000, MaxBackgroundS2SCalls: -1}, wantErr: "max_background_s2s_calls must not be negative"},
 		{name: "async without cache", config: Config{Timeout: 1_000, WaitTimeout: int64Pointer(0)}, wantErr: "cache must be enabled"},
 	}
 	for _, test := range tests {
@@ -56,18 +56,18 @@ func TestConfigValidation(t *testing.T) {
 }
 
 func TestAccountOverlayCannotResizeModuleLimiter(t *testing.T) {
-	base := Config{Timeout: 1_000, MaxBackgroundCalls: 25, Cache: iiqidcache.Config{Enabled: true}}
-	resolved := base.resolve(json.RawMessage(`{"wait_timeout":0,"max_background_calls":999}`))
+	base := Config{Timeout: 1_000, MaxBackgroundS2SCalls: 25, Cache: iiqidcache.Config{Enabled: true}}
+	resolved := base.resolve(json.RawMessage(`{"wait_timeout":0,"max_background_s2s_calls":999}`))
 	if resolved.WaitTimeout == nil || *resolved.WaitTimeout != 0 {
 		t.Fatalf("account wait timeout = %v, want explicit zero", resolved.WaitTimeout)
 	}
-	if resolved.MaxBackgroundCalls != 25 {
-		t.Fatalf("account changed module capacity to %d", resolved.MaxBackgroundCalls)
+	if resolved.MaxBackgroundS2SCalls != 25 {
+		t.Fatalf("account changed module capacity to %d", resolved.MaxBackgroundS2SCalls)
 	}
 }
 
 func TestInvalidAccountOverlayFallsBackToModuleConfig(t *testing.T) {
-	base := Config{Timeout: 1_000, MaxBackgroundCalls: 25}
+	base := Config{Timeout: 1_000, MaxBackgroundS2SCalls: 25}
 	resolved := base.resolve(json.RawMessage(`{"wait_timeout":0}`))
 	if resolved.WaitTimeout != nil || resolved.Timeout != base.Timeout {
 		t.Fatalf("invalid account overlay was applied: %#v", resolved)
@@ -75,7 +75,7 @@ func TestInvalidAccountOverlayFallsBackToModuleConfig(t *testing.T) {
 }
 
 func TestUnusableAccountOverlayKeepsModuleConfig(t *testing.T) {
-	base := Config{Timeout: 1_000, WaitTimeout: int64Pointer(2_000), MaxBackgroundCalls: 25}
+	base := Config{Timeout: 1_000, WaitTimeout: int64Pointer(2_000), MaxBackgroundS2SCalls: 25}
 	for _, test := range []struct {
 		name          string
 		accountConfig json.RawMessage

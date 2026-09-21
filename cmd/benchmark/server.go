@@ -24,16 +24,16 @@ import (
 )
 
 type serverConfig struct {
-	listen        string
-	endpoint      string
-	partnerID     string
-	timeout       time.Duration
-	concurrency   int
-	maxBackground int
-	verbose       bool
-	cacheDir      string
-	cacheTTL      time.Duration
-	cacheMaxKeys  int
+	listen           string
+	endpoint         string
+	partnerID        string
+	timeout          time.Duration
+	concurrency      int
+	maxBackgroundS2S int
+	verbose          bool
+	cacheDir         string
+	cacheTTL         time.Duration
+	cacheMaxKeys     int
 }
 
 func main() {
@@ -68,7 +68,7 @@ func parseFlags() serverConfig {
 	flag.StringVar(&cfg.partnerID, "partner", "", "IIQ partner ID (required)")
 	flag.DurationVar(&cfg.timeout, "timeout", 400*time.Millisecond, "per-request S2S timeout")
 	flag.IntVar(&cfg.concurrency, "concurrency", 16, "expected concurrent callers; sizes the idle connection pool")
-	flag.IntVar(&cfg.maxBackground, "max-background-calls", 2000, "maximum concurrent calls in async or hybrid mode")
+	flag.IntVar(&cfg.maxBackgroundS2S, "max-background-s2s-calls", 2000, "maximum concurrent S2S calls in async or hybrid mode")
 	flag.BoolVar(&cfg.verbose, "verbose", false, "log enrichment warnings")
 	flag.StringVar(&cfg.cacheDir, "cache", "", "enable the identity cache, persisting entries in this directory; required for the async and hybrid modes")
 	flag.DurationVar(&cfg.cacheTTL, "cache-ttl", time.Hour, "cache TTL used when the API returns none")
@@ -84,8 +84,8 @@ func (cfg *serverConfig) validate() error {
 	if cfg.concurrency < 1 {
 		return errors.New("-concurrency must be positive")
 	}
-	if cfg.maxBackground < 1 {
-		return errors.New("-max-background-calls must be positive")
+	if cfg.maxBackgroundS2S < 1 {
+		return errors.New("-max-background-s2s-calls must be positive")
 	}
 	return nil
 }
@@ -97,9 +97,9 @@ func buildEnricher(cfg serverConfig, metrics enrichment.Metrics, cacheMetrics id
 	transport.MaxIdleConnsPerHost = cfg.concurrency * 2
 
 	dependencies := enrichment.Dependencies{
-		S2S:                s2s.NewClient(&http.Client{Transport: transport}),
-		Metrics:            metrics,
-		MaxBackgroundCalls: cfg.maxBackground,
+		S2S:                   s2s.NewClient(&http.Client{Transport: transport}),
+		Metrics:               metrics,
+		MaxBackgroundS2SCalls: cfg.maxBackgroundS2S,
 	}
 	if cfg.verbose {
 		dependencies.Logger = slogLogger{}
@@ -225,7 +225,7 @@ func serve(cfg serverConfig, enricher enrichment.Enricher, registry *prom.Regist
 
 	server := &http.Server{Addr: cfg.listen, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	slog.Info("benchmark server listening",
-		"addr", cfg.listen, "timeout", cfg.timeout, "cache", cfg.cacheDir != "", "max_background_calls", cfg.maxBackground)
+		"addr", cfg.listen, "timeout", cfg.timeout, "cache", cfg.cacheDir != "", "max_background_s2s_calls", cfg.maxBackgroundS2S)
 	return server.ListenAndServe()
 }
 

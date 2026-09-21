@@ -763,7 +763,7 @@ func TestConfiguredBackgroundCapacityBoundsPotentiallyDetachedCalls(t *testing.T
 		<-release
 		return s2s.Response{Data: json.RawMessage(`{"eids":[]}`)}, nil
 	}}
-	created, err := New(Dependencies{S2S: api, MaxBackgroundCalls: 1}, 10)
+	created, err := New(Dependencies{S2S: api, MaxBackgroundS2SCalls: 1}, 10)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}

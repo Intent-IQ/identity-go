@@ -53,7 +53,7 @@ func New(dependencies Dependencies, maxCacheKeys int) (Enricher, error) {
 		metrics:      dependencies.Metrics,
 		logger:       dependencies.Logger,
 		maxCacheKeys: maxCacheKeys,
-		limiter:      newBackgroundLimiter(dependencies.MaxBackgroundCalls),
+		limiter:      newBackgroundLimiter(dependencies.MaxBackgroundS2SCalls),
 	}, nil
 }
 
@@ -173,26 +173,6 @@ func (enricher *enricher) execute(ctx context.Context, input Request, keys []Cac
 	}
 }
 
-func stopAndDrainTimer(timer *time.Timer) {
-	if !timer.Stop() {
-		select {
-		case <-timer.C:
-		default:
-		}
-	}
-}
-
-func prepareResolution(input Request, keys []CacheKey) preparedResolution {
-	requestURL, consent := buildS2SRequest(input)
-	return preparedResolution{
-		partnerID:  input.PartnerID,
-		requestURL: requestURL,
-		consent:    consent,
-		timeout:    input.Timeout,
-		cacheKeys:  append([]CacheKey(nil), keys...),
-	}
-}
-
 func (enricher *enricher) startPrepared(
 	ctx context.Context,
 	prepared preparedResolution,
@@ -261,13 +241,6 @@ func (enricher *enricher) executePrepared(ctx context.Context, prepared prepared
 	return result, nil
 }
 
-// cacheWriteContext gives the cache write a budget of its own. The call that
-// just finished may have spent the whole request timeout, and filling the cache
-// is the reason it was allowed to outlive the auction that started it.
-func cacheWriteContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(ctx, timeout)
-}
-
 func (enricher *enricher) putNegative(ctx context.Context, keys []CacheKey, result Result) {
 	if len(keys) == 0 {
 		return
@@ -280,6 +253,33 @@ func (enricher *enricher) putNegative(ctx context.Context, keys []CacheKey, resu
 	if err := enricher.cache.PutNegative(ctx, keys, metadata); err != nil {
 		enricher.logger.Warn(fmt.Sprintf("identity enrichment cache negative write failed: %v", err))
 	}
+}
+
+func stopAndDrainTimer(timer *time.Timer) {
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+}
+
+func prepareResolution(input Request, keys []CacheKey) preparedResolution {
+	requestURL, consent := buildS2SRequest(input)
+	return preparedResolution{
+		partnerID:  input.PartnerID,
+		requestURL: requestURL,
+		consent:    consent,
+		timeout:    input.Timeout,
+		cacheKeys:  append([]CacheKey(nil), keys...),
+	}
+}
+
+// cacheWriteContext gives the cache write a budget of its own. The call that
+// just finished may have spent the whole request timeout, and filling the cache
+// is the reason it was allowed to outlive the auction that started it.
+func cacheWriteContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, timeout)
 }
 
 func classifyS2SError(err error) (kind string, status int) {

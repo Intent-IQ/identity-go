@@ -12,12 +12,12 @@ import (
 )
 
 type Config struct {
-	PartnerID          string `json:"partner_id" yaml:"partner_id"`
-	APIEndpoint        string `json:"api_endpoint" yaml:"api_endpoint"`
-	ReportsEndpoint    string `json:"reports_endpoint" yaml:"reports_endpoint"`
-	Timeout            int64  `json:"timeout" yaml:"timeout"`
-	WaitTimeout        *int64 `json:"wait_timeout" yaml:"wait_timeout"`
-	MaxBackgroundCalls int    `json:"max_background_calls" yaml:"max_background_calls"`
+	PartnerID             string `json:"partner_id" yaml:"partner_id"`
+	APIEndpoint           string `json:"api_endpoint" yaml:"api_endpoint"`
+	ReportsEndpoint       string `json:"reports_endpoint" yaml:"reports_endpoint"`
+	Timeout               int64  `json:"timeout" yaml:"timeout"`
+	WaitTimeout           *int64 `json:"wait_timeout" yaml:"wait_timeout"`
+	MaxBackgroundS2SCalls int    `json:"max_background_s2s_calls" yaml:"max_background_s2s_calls"`
 
 	Cache     iiqidcache.Config           `json:"cache" yaml:"cache"`
 	Redis     *iiqidredisstore.Config     `json:"redis" yaml:"redis"`
@@ -63,8 +63,8 @@ func (config Config) validate() error {
 	if config.WaitTimeout != nil && *config.WaitTimeout < 0 {
 		return fmt.Errorf("wait_timeout must not be negative")
 	}
-	if config.MaxBackgroundCalls < 0 {
-		return fmt.Errorf("max_background_calls must not be negative")
+	if config.MaxBackgroundS2SCalls < 0 {
+		return fmt.Errorf("max_background_s2s_calls must not be negative")
 	}
 	if config.WaitTimeout != nil && *config.WaitTimeout < config.Timeout && !config.Cache.Enabled {
 		return fmt.Errorf("cache must be enabled when wait_timeout is less than timeout")
@@ -81,7 +81,7 @@ func (config Config) resolve(accountConfig json.RawMessage) Config {
 	if err := json.Unmarshal(accountConfig, &resolved); err != nil {
 		return config
 	}
-	resolved.MaxBackgroundCalls = config.MaxBackgroundCalls
+	resolved.MaxBackgroundS2SCalls = config.MaxBackgroundS2SCalls
 	if err := resolved.validate(); err != nil {
 		return config
 	}

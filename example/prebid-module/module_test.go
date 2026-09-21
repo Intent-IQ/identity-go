@@ -54,7 +54,7 @@ func TestBuilderRejectsInvalidWaitConfiguration(t *testing.T) {
 	for _, raw := range []string{
 		`{"timeout":0}`,
 		`{"timeout":1000,"wait_timeout":-1}`,
-		`{"timeout":1000,"max_background_calls":-1}`,
+		`{"timeout":1000,"max_background_s2s_calls":-1}`,
 		`{"timeout":1000,"wait_timeout":0,"cache":{"enabled":false}}`,
 	} {
 		if _, err := Builder([]byte(raw), moduledeps.ModuleDeps{}); err == nil {

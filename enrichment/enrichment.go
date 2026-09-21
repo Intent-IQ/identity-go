@@ -35,8 +35,8 @@ const (
 	// It remains distinct from OutcomeNoIDs because it must not be negatively cached.
 	OutcomeUnresolved Outcome = "unresolved"
 
-	OutcomeInProgress Outcome = "in_progress"
-	OutcomeNoEndpoint Outcome = "no_endpoint"
+	OutcomeInProgress      Outcome = "in_progress"
+	OutcomeNoEndpoint      Outcome = "no_endpoint"
 	OutcomeWaitExpired     Outcome = "wait_expired"
 	OutcomeBackgroundLimit Outcome = "background_limit"
 )

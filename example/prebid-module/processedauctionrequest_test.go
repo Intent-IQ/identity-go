@@ -69,7 +69,7 @@ func TestProcessedAuctionRequestPassesWaitTimeoutAndLeavesExpiredAuctionUnchange
 	module := &Module{
 		config: Config{
 			PartnerID: "partner", APIEndpoint: "endpoint", Timeout: 250,
-			WaitTimeout: &wait, Cache: cacheConfigEnabled(), MaxBackgroundCalls: 10,
+			WaitTimeout: &wait, Cache: cacheConfigEnabled(), MaxBackgroundS2SCalls: 10,
 		},
 		enricher: recorder,
 	}
