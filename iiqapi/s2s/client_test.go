@@ -164,6 +164,31 @@ func TestResolveBodyReadError(t *testing.T) {
 	}
 }
 
+func TestResolveEmptyBodyIsNoResult(t *testing.T) {
+	for name, body := range map[string]string{"empty": "", "whitespace": " \n\t "} {
+		t.Run(name, func(t *testing.T) {
+			server := responseServer(t, http.StatusOK, body)
+
+			result, err := NewClient(server.Client()).Resolve(t.Context(), server.URL, "")
+			if err != nil {
+				t.Fatalf("Resolve() error = %v, want nil", err)
+			}
+			if result.Status != http.StatusOK {
+				t.Fatalf("status = %d, want %d", result.Status, http.StatusOK)
+			}
+			if !result.EmptyBody {
+				t.Fatal("EmptyBody = false, want true")
+			}
+			if len(result.EIDs()) != 0 {
+				t.Fatalf("EIDs() = %d, want 0", len(result.EIDs()))
+			}
+			if result.TTL() != 0 {
+				t.Fatalf("TTL() = %v, want 0", result.TTL())
+			}
+		})
+	}
+}
+
 func TestResolveParseError(t *testing.T) {
 	server := responseServer(t, http.StatusOK, `{not-json}`)
 

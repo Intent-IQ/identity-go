@@ -8,6 +8,7 @@ type CacheLookupResult string
 const (
 	ReasonNoIDs       NotEnrichedReason = "no_ids"
 	ReasonNoIDsCached NotEnrichedReason = "no_ids_cached"
+	ReasonUnresolved  NotEnrichedReason = "unresolved"
 	ReasonInProgress  NotEnrichedReason = "in_progress"
 	ReasonNoEndpoint  NotEnrichedReason = "no_endpoint"
 )

@@ -7,7 +7,7 @@ hooks:
         partner_id: example-partner
         api_endpoint: https://api.intentiq.com/profiles_engine/ProfilesEngineServlet
         reports_endpoint: https://reports.intentiq.com/report
-        timeout: 1000 # milliseconds
+        timeout: 1500 # milliseconds
 
         metrics_enabled: true
         metrics_port: 9091
@@ -52,13 +52,13 @@ hooks:
         stages:
           processed_auction_request:
             groups:
-              - timeout: 1000
+              - timeout: 2000
                 hook_sequence:
                   - module_code: intentiq.identity
                     hook_impl_code: HandleProcessedAuctionHook
           auction_response:
             groups:
-              - timeout: 1000
+              - timeout: 2000
                 hook_sequence:
                   - module_code: intentiq.identity
                     hook_impl_code: HandleAuctionResponseHook

@@ -13,6 +13,7 @@ type Response struct {
 	ABTestUUID string          `json:"abTestUuid"`
 	TC         *int64          `json:"tc"`
 	Status     int             `json:"-"`
+	EmptyBody  bool            `json:"-"`
 }
 
 // EIDs decodes resolved identifiers. Non-object data is treated as no result,
