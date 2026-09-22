@@ -28,17 +28,32 @@ type Request struct {
 type Outcome string
 
 const (
-	OutcomeEnriched    Outcome = "enriched"
-	OutcomeNoIDs       Outcome = "no_ids"
+	// OutcomeEnriched means one or more resolved identity IDs are available for the auction.
+	OutcomeEnriched Outcome = "enriched"
+
+	// OutcomeNoIDs means the S2S call completed successfully but returned no identity IDs.
+	OutcomeNoIDs Outcome = "no_ids"
+
+	// OutcomeCachedNoIDs means a cached negative result was found, so no S2S call was started.
 	OutcomeCachedNoIDs Outcome = "no_ids_cached"
 
 	// OutcomeUnresolved represents a successful S2S response with an empty body.
 	// It remains distinct from OutcomeNoIDs because it must not be negatively cached.
 	OutcomeUnresolved Outcome = "unresolved"
 
-	OutcomeInProgress      Outcome = "in_progress"
-	OutcomeNoEndpoint      Outcome = "no_endpoint"
-	OutcomeWaitExpired     Outcome = "wait_expired"
+	// OutcomeInProgress means another request is already resolving this identity,
+	// so this request did not start another S2S call.
+	OutcomeInProgress Outcome = "in_progress"
+
+	// OutcomeNoEndpoint means enrichment was skipped because no S2S endpoint was configured.
+	OutcomeNoEndpoint Outcome = "no_endpoint"
+
+	// OutcomeWaitExpired means the auction stopped waiting, while the admitted S2S
+	// call may continue in the background and warm the cache.
+	OutcomeWaitExpired Outcome = "wait_expired"
+
+	// OutcomeBackgroundLimit means all background S2S slots were occupied, so the
+	// request failed open without starting or queueing another S2S call.
 	OutcomeBackgroundLimit Outcome = "background_limit"
 )
 
