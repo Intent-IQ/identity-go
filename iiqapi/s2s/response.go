@@ -8,17 +8,21 @@ import (
 )
 
 type Response struct {
-	Data       json.RawMessage `json:"data"`
-	CacheTTL   *int64          `json:"cttl"`
-	ABTestUUID string          `json:"abTestUuid"`
-	TC         *int64          `json:"tc"`
-	Status     int             `json:"-"`
-	EmptyBody  bool            `json:"-"`
+	Data         json.RawMessage `json:"data"`
+	ResolvedEIDs []openrtb2.EID  `json:"-"`
+	CacheTTL     *int64          `json:"cttl"`
+	ABTestUUID   string          `json:"abTestUuid"`
+	TC           *int64          `json:"tc"`
+	Status       int             `json:"-"`
+	EmptyBody    bool            `json:"-"`
 }
 
 // EIDs decodes resolved identifiers. Non-object data is treated as no result,
 // matching the S2S API's empty-string response behavior.
 func (r Response) EIDs() []openrtb2.EID {
+	if r.ResolvedEIDs != nil {
+		return r.ResolvedEIDs
+	}
 	var data struct {
 		EIDs []openrtb2.EID `json:"eids"`
 	}

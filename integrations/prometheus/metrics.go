@@ -23,13 +23,15 @@ var l2LatencyBuckets = []float64{.0005, .001, .0025, .005, .01, .025, .05, .1, .
 // registration is idempotent for a shared registry, so hosts can safely reuse
 // an integration during component wiring.
 type Metrics struct {
-	cacheLookup *prom.CounterVec
-	requests    *prom.CounterVec
-	apiSuccess  *prom.CounterVec
-	apiError    *prom.CounterVec
-	enriched    *prom.CounterVec
-	notEnriched *prom.CounterVec
-	apiLatency  *prom.HistogramVec
+	cacheLookup        *prom.CounterVec
+	requests           *prom.CounterVec
+	apiSuccess         *prom.CounterVec
+	apiError           *prom.CounterVec
+	enriched           *prom.CounterVec
+	notEnriched        *prom.CounterVec
+	apiLatency         *prom.HistogramVec
+	backgroundActive   prom.Gauge
+	backgroundCapacity prom.Gauge
 
 	impressionReported *prom.CounterVec
 	impressionError    *prom.CounterVec
@@ -93,6 +95,22 @@ func New(registerer prom.Registerer) (*Metrics, error) {
 	), []string{"partner_id"})); err != nil {
 		return nil, err
 	}
+	if metrics.backgroundActive, err = registerGauge(registerer, prom.NewGauge(prom.GaugeOpts{
+		Namespace: Namespace,
+		Subsystem: Subsystem,
+		Name:      "background_active",
+		Help:      "Current number of admitted async or hybrid enrichment jobs.",
+	})); err != nil {
+		return nil, err
+	}
+	if metrics.backgroundCapacity, err = registerGauge(registerer, prom.NewGauge(prom.GaugeOpts{
+		Namespace: Namespace,
+		Subsystem: Subsystem,
+		Name:      "background_capacity",
+		Help:      "Maximum number of concurrently admitted async or hybrid enrichment jobs.",
+	})); err != nil {
+		return nil, err
+	}
 	if metrics.impressionReported, err = registerCounterVec(registerer, prom.NewCounterVec(counterOpts(
 		"impression_reported_total", "Winning bids reported to the reports_endpoint, by partner_id.",
 	), []string{"partner_id"})); err != nil {
@@ -153,6 +171,18 @@ func (metrics *Metrics) CacheLookup(partnerID string, result enrichment.CacheLoo
 	metrics.cacheLookup.WithLabelValues(string(result), layer.Token(), partnerID).Inc()
 }
 
+func (metrics *Metrics) BackgroundCapacity(capacity int) {
+	metrics.backgroundCapacity.Set(float64(capacity))
+}
+
+func (metrics *Metrics) BackgroundStarted() {
+	metrics.backgroundActive.Inc()
+}
+
+func (metrics *Metrics) BackgroundFinished() {
+	metrics.backgroundActive.Dec()
+}
+
 func (metrics *Metrics) ImpressionReported(partnerID string) {
 	metrics.impressionReported.WithLabelValues(partnerID).Inc()
 }
@@ -205,6 +235,18 @@ func registerHistogram(registerer prom.Registerer, collector prom.Histogram) (pr
 	registered, ok := existing.(prom.Histogram)
 	if !ok {
 		return nil, fmt.Errorf("registered collector has type %T, want prometheus.Histogram", existing)
+	}
+	return registered, nil
+}
+
+func registerGauge(registerer prom.Registerer, collector prom.Gauge) (prom.Gauge, error) {
+	existing, err := register(registerer, collector)
+	if err != nil {
+		return nil, err
+	}
+	registered, ok := existing.(prom.Gauge)
+	if !ok {
+		return nil, fmt.Errorf("registered collector has type %T, want prometheus.Gauge", existing)
 	}
 	return registered, nil
 }

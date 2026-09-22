@@ -26,6 +26,7 @@ type recordingCache struct {
 	inProgressTTLs []time.Duration
 	resolvedCtxErr error
 	negativeCtxErr error
+	writeCompleted chan struct{}
 }
 
 type cacheResolvedCall struct {
@@ -50,6 +51,31 @@ type lifecycleCache struct {
 	result   Result
 	resolved chan struct{}
 	negative chan struct{}
+}
+
+type blockingWriteCache struct {
+	writeStarted chan struct{}
+	writeRelease chan struct{}
+}
+
+func (cache *blockingWriteCache) Get(context.Context, []CacheKey) (CacheResult, error) {
+	return CacheResult{State: CacheMiss}, nil
+}
+
+func (cache *blockingWriteCache) PutResolved(context.Context, []CacheKey, Result) error {
+	close(cache.writeStarted)
+	<-cache.writeRelease
+	return nil
+}
+
+func (cache *blockingWriteCache) PutNegative(context.Context, []CacheKey, ResultMetadata) error {
+	close(cache.writeStarted)
+	<-cache.writeRelease
+	return nil
+}
+
+func (*blockingWriteCache) PutInProgress(context.Context, []CacheKey, time.Duration) error {
+	return nil
 }
 
 type signalingMetrics struct {
@@ -114,12 +140,18 @@ func (cache *recordingCache) Get(_ context.Context, keys []CacheKey) (CacheResul
 func (cache *recordingCache) PutResolved(ctx context.Context, keys []CacheKey, result Result) error {
 	cache.resolvedCtxErr = ctx.Err()
 	cache.resolved = append(cache.resolved, cacheResolvedCall{keys: cloneCacheKeys(keys), result: result})
+	if cache.writeCompleted != nil {
+		close(cache.writeCompleted)
+	}
 	return cache.putErr
 }
 
 func (cache *recordingCache) PutNegative(ctx context.Context, keys []CacheKey, metadata ResultMetadata) error {
 	cache.negativeCtxErr = ctx.Err()
 	cache.negative = append(cache.negative, cacheNegativeCall{keys: cloneCacheKeys(keys), metadata: metadata})
+	if cache.writeCompleted != nil {
+		close(cache.writeCompleted)
+	}
 	return cache.putErr
 }
 
@@ -503,7 +535,7 @@ func TestExecuteDetachedFromCallerThroughCacheWrite(t *testing.T) {
 				<-release
 				return test.response, nil
 			}}
-			cache := &recordingCache{}
+			cache := &recordingCache{writeCompleted: make(chan struct{})}
 			enricher := newCachedTestEnricher(t, api, cache, &recordingEnrichmentMetrics{}, &recordingEnrichmentLogger{}, 10).(*enricher)
 			request := cacheableRequest()
 			wait := 100 * time.Millisecond
@@ -533,6 +565,11 @@ func TestExecuteDetachedFromCallerThroughCacheWrite(t *testing.T) {
 			if got.err != nil || got.result.Outcome != test.wantResult {
 				t.Fatalf("execute() = (%#v, %v), want outcome %q", got.result, got.err, test.wantResult)
 			}
+			select {
+			case <-cache.writeCompleted:
+			case <-time.After(time.Second):
+				t.Fatal("cache write did not complete")
+			}
 			switch test.wantWrite {
 			case "resolved":
 				if len(cache.resolved) != 1 || cache.resolvedCtxErr != nil {
@@ -544,6 +581,31 @@ func TestExecuteDetachedFromCallerThroughCacheWrite(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestEnrichHybridReturnsBeforeCacheWriteCompletes(t *testing.T) {
+	api := &recordingS2S{response: s2s.Response{Data: json.RawMessage(
+		`{"eids":[{"source":"intentiq.com","uids":[{"id":"resolved"}]}]}`,
+	)}}
+	cache := &blockingWriteCache{
+		writeStarted: make(chan struct{}),
+		writeRelease: make(chan struct{}),
+	}
+	t.Cleanup(func() { close(cache.writeRelease) })
+	enricher := newCachedTestEnricher(t, api, cache, &recordingEnrichmentMetrics{}, &recordingEnrichmentLogger{}, 10)
+	request := cacheableRequest()
+	wait := 500 * time.Millisecond
+	request.WaitTimeout = &wait
+
+	result, err := enricher.Enrich(t.Context(), request)
+	if err != nil || result.Outcome != OutcomeEnriched {
+		t.Fatalf("Enrich() = (%#v, %v), want enrichment before cache persistence", result, err)
+	}
+	select {
+	case <-cache.writeStarted:
+	case <-time.After(time.Second):
+		t.Fatal("cache write did not start")
 	}
 }
 
@@ -785,7 +847,8 @@ func TestConfiguredBackgroundCapacityBoundsPotentiallyDetachedCalls(t *testing.T
 		return s2s.Response{Data: json.RawMessage(`{"eids":[]}`)}, nil
 	}}
 	cache := &recordingCache{result: CacheResult{State: CacheMiss}}
-	created, err := New(Dependencies{S2S: api, Cache: cache, MaxBackgroundS2SCalls: 1}, 10)
+	metrics := &recordingEnrichmentMetrics{}
+	created, err := New(Dependencies{S2S: api, Cache: cache, Metrics: metrics, MaxBackgroundS2SCalls: 1}, 10)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -798,6 +861,9 @@ func TestConfiguredBackgroundCapacityBoundsPotentiallyDetachedCalls(t *testing.T
 		t.Fatalf("first Enrich() = (%#v, %v)", first, err)
 	}
 	<-started
+	if active, capacity := metrics.backgroundSnapshot(); active != 1 || capacity != 1 {
+		t.Fatalf("background metrics = active %d capacity %d, want 1/1", active, capacity)
+	}
 	second, err := created.Enrich(t.Context(), request)
 	if err != nil || second.Outcome != OutcomeBackgroundLimit {
 		t.Fatalf("second Enrich() = (%#v, %v), want capacity rejection", second, err)
@@ -814,6 +880,9 @@ func TestConfiguredBackgroundCapacityBoundsPotentiallyDetachedCalls(t *testing.T
 	}
 	if len(limiter) != 0 {
 		t.Fatal("configured background permit was not released")
+	}
+	if active, capacity := metrics.backgroundSnapshot(); active != 0 || capacity != 1 {
+		t.Fatalf("background metrics after completion = active %d capacity %d, want 0/1", active, capacity)
 	}
 }
 

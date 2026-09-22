@@ -54,6 +54,14 @@ type resolutionCompletion struct {
 	err    error
 }
 
+type backgroundTask struct {
+	resolutionCtx context.Context
+	cacheCtx      context.Context
+	cancel        context.CancelFunc
+	job           resolutionJob
+	completed     chan<- resolutionCompletion
+}
+
 func New(deps Dependencies, maxCacheKeys int) (Enricher, error) {
 	if deps.S2S == nil {
 		return nil, errS2SRequired
@@ -67,6 +75,7 @@ func New(deps Dependencies, maxCacheKeys int) (Enricher, error) {
 	if deps.Logger == nil {
 		deps.Logger = logging.NoopLogger{}
 	}
+	deps.Metrics.BackgroundCapacity(deps.MaxBackgroundS2SCalls)
 	return &enricher{
 		s2s:          deps.S2S,
 		cache:        deps.Cache,
@@ -174,18 +183,37 @@ func (e *enricher) executionPlanFor(req Request) (executionPlan, error) {
 func (e *enricher) schedule(ctx context.Context, plan executionPlan, job resolutionJob) (Result, error) {
 	if plan.mode == WaitModeSync {
 		e.markInProgress(ctx, job)
-		return e.run(ctx, job)
+		resolutionCtx, cancel := context.WithTimeout(ctx, job.timeout)
+		defer cancel()
+		return e.runBounded(resolutionCtx, ctx, job)
 	}
 	if !e.limiter.TryAcquire() {
 		e.metrics.NotEnriched(job.partnerID, ReasonBackgroundLimit)
 		return Result{Outcome: OutcomeBackgroundLimit}, nil
 	}
+	e.metrics.BackgroundStarted()
 
 	e.markInProgress(ctx, job)
-	completion := e.runBackground(context.WithoutCancel(ctx), job)
+
+	cacheCtx := context.WithoutCancel(ctx)
+	resolutionCtx, cancel := context.WithTimeout(cacheCtx, job.timeout)
+
+	task := backgroundTask{
+		resolutionCtx: resolutionCtx,
+		cacheCtx:      cacheCtx,
+		cancel:        cancel,
+		job:           job,
+	}
+
 	if plan.mode == WaitModeAsync {
+		e.startBackground(task)
 		return e.waitExpired(job.partnerID)
 	}
+
+	completion := make(chan resolutionCompletion, 1)
+	task.completed = completion
+
+	e.startBackground(task)
 	return e.waitForResult(completion, plan.wait, job.partnerID)
 }
 
@@ -198,14 +226,25 @@ func (e *enricher) markInProgress(ctx context.Context, job resolutionJob) {
 	}
 }
 
-func (e *enricher) runBackground(ctx context.Context, job resolutionJob) <-chan resolutionCompletion {
-	completed := make(chan resolutionCompletion, 1)
+func (e *enricher) startBackground(task backgroundTask) {
 	go func() {
-		defer e.limiter.Release()
-		result, err := e.run(ctx, job)
-		completed <- resolutionCompletion{result: result, err: err}
+		defer func() {
+			e.metrics.BackgroundFinished()
+			e.limiter.Release()
+		}()
+
+		result, err := e.resolve(task.resolutionCtx, task.job)
+		task.cancel()
+
+		// The current auction depends only on S2S resolution. Cache persistence
+		// may continue after the caller's wait budget expires.
+		if task.completed != nil {
+			task.completed <- resolutionCompletion{result: result, err: err}
+		}
+		if err == nil {
+			e.storeResult(task.cacheCtx, task.job, result)
+		}
 	}()
-	return completed
 }
 
 func (e *enricher) waitForResult(completion <-chan resolutionCompletion, wait time.Duration, partnerID string) (Result, error) {
@@ -232,20 +271,23 @@ func (e *enricher) waitExpired(partnerID string) (Result, error) {
 }
 
 func (e *enricher) run(ctx context.Context, job resolutionJob) (Result, error) {
-	result, err := e.resolve(ctx, job)
+	resolutionCtx, cancel := context.WithTimeout(ctx, job.timeout)
+	defer cancel()
+	return e.runBounded(resolutionCtx, ctx, job)
+}
+
+func (e *enricher) runBounded(resolutionCtx, cacheCtx context.Context, job resolutionJob) (Result, error) {
+	result, err := e.resolve(resolutionCtx, job)
 	if err != nil {
 		return Result{}, err
 	}
-	e.storeResult(ctx, job, result)
+	e.storeResult(cacheCtx, job, result)
 	return result, nil
 }
 
 func (e *enricher) resolve(ctx context.Context, job resolutionJob) (Result, error) {
-	requestContext, cancel := context.WithTimeout(ctx, job.timeout)
-	defer cancel()
-
 	started := time.Now()
-	response, err := e.s2s.Resolve(requestContext, job.requestURL, job.consent)
+	response, err := e.s2s.Resolve(ctx, job.requestURL, job.consent)
 	duration := time.Since(started)
 
 	e.metrics.APIRequestDuration(job.partnerID, duration)

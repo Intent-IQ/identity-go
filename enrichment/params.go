@@ -37,6 +37,7 @@ const (
 // buildS2SRequest builds the URL and consent header value expected by the S2S API.
 func buildS2SRequest(input Request) (requestURL, consent string) {
 	var builder strings.Builder
+	builder.Grow(len(input.Endpoint) + 128)
 	builder.WriteString(input.Endpoint)
 	if strings.Contains(input.Endpoint, "?") {
 		builder.WriteByte('&')

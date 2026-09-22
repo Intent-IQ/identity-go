@@ -28,6 +28,9 @@ type Metrics interface {
 	APISuccess(partnerID string)
 	APIError(partnerID string, kind string, statusCode int)
 	CacheLookup(partnerID string, result CacheLookupResult, layer CacheLayer)
+	BackgroundCapacity(capacity int)
+	BackgroundStarted()
+	BackgroundFinished()
 }
 
 type NoopMetrics struct{}
@@ -39,5 +42,8 @@ func (NoopMetrics) APIRequestDuration(string, time.Duration)          {}
 func (NoopMetrics) APISuccess(string)                                 {}
 func (NoopMetrics) APIError(string, string, int)                      {}
 func (NoopMetrics) CacheLookup(string, CacheLookupResult, CacheLayer) {}
+func (NoopMetrics) BackgroundCapacity(int)                            {}
+func (NoopMetrics) BackgroundStarted()                                {}
+func (NoopMetrics) BackgroundFinished()                               {}
 
 var _ Metrics = NoopMetrics{}

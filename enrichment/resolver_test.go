@@ -52,8 +52,10 @@ type enrichmentMetricEvent struct {
 }
 
 type recordingEnrichmentMetrics struct {
-	mu     sync.Mutex
-	events []enrichmentMetricEvent
+	mu                 sync.Mutex
+	events             []enrichmentMetricEvent
+	backgroundActive   int
+	backgroundCapacity int
 }
 
 func (metrics *recordingEnrichmentMetrics) record(event enrichmentMetricEvent) {
@@ -88,6 +90,26 @@ func (metrics *recordingEnrichmentMetrics) APIError(partnerID, kind string, stat
 }
 func (metrics *recordingEnrichmentMetrics) CacheLookup(partnerID string, result CacheLookupResult, layer CacheLayer) {
 	metrics.record(enrichmentMetricEvent{name: "cache_lookup", partnerID: partnerID, lookup: result, layer: layer})
+}
+func (metrics *recordingEnrichmentMetrics) BackgroundCapacity(capacity int) {
+	metrics.mu.Lock()
+	metrics.backgroundCapacity = capacity
+	metrics.mu.Unlock()
+}
+func (metrics *recordingEnrichmentMetrics) BackgroundStarted() {
+	metrics.mu.Lock()
+	metrics.backgroundActive++
+	metrics.mu.Unlock()
+}
+func (metrics *recordingEnrichmentMetrics) BackgroundFinished() {
+	metrics.mu.Lock()
+	metrics.backgroundActive--
+	metrics.mu.Unlock()
+}
+func (metrics *recordingEnrichmentMetrics) backgroundSnapshot() (active, capacity int) {
+	metrics.mu.Lock()
+	defer metrics.mu.Unlock()
+	return metrics.backgroundActive, metrics.backgroundCapacity
 }
 
 type recordingEnrichmentLogger struct{ warnings []string }

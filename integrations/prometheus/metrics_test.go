@@ -40,6 +40,8 @@ func TestEnrichmentMetrics(t *testing.T) {
 	metrics.CacheLookup("partner", enrichment.CacheLookupHit, enrichment.CacheLayerL1)
 	metrics.CacheLookup("partner", enrichment.CacheLookupHit, enrichment.CacheLayerL2)
 	metrics.CacheLookup("partner", enrichment.CacheLookupMiss, enrichment.CacheLayerNone)
+	metrics.BackgroundCapacity(10)
+	metrics.BackgroundStarted()
 
 	assertCounter(t, metrics.requests.WithLabelValues("partner"), 1)
 	assertCounter(t, metrics.apiSuccess.WithLabelValues("partner"), 1)
@@ -55,6 +57,10 @@ func TestEnrichmentMetrics(t *testing.T) {
 	assertCounter(t, metrics.cacheLookup.WithLabelValues("hit", "l1", "partner"), 1)
 	assertCounter(t, metrics.cacheLookup.WithLabelValues("hit", "l2", "partner"), 1)
 	assertCounter(t, metrics.cacheLookup.WithLabelValues("miss", "none", "partner"), 1)
+	assertGauge(t, metrics.backgroundCapacity, 10)
+	assertGauge(t, metrics.backgroundActive, 1)
+	metrics.BackgroundFinished()
+	assertGauge(t, metrics.backgroundActive, 0)
 }
 
 func TestCacheMetrics(t *testing.T) {
@@ -125,6 +131,8 @@ func TestLatencyObservationsAndMetricNames(t *testing.T) {
 		"iiq_identity_api_error_total",
 		"iiq_identity_api_latency_seconds",
 		"iiq_identity_api_success_total",
+		"iiq_identity_background_active",
+		"iiq_identity_background_capacity",
 		"iiq_identity_cache_lookup_total",
 		"iiq_identity_enriched_total",
 		"iiq_identity_impression_error_total",
@@ -145,6 +153,13 @@ func TestLatencyObservationsAndMetricNames(t *testing.T) {
 		if contains(names, removed) {
 			t.Fatalf("removed L1 metric %q was registered", removed)
 		}
+	}
+}
+
+func assertGauge(t *testing.T, gauge prom.Gauge, want float64) {
+	t.Helper()
+	if got := testutil.ToFloat64(gauge); got != want {
+		t.Fatalf("gauge = %v, want %v", got, want)
 	}
 }
 
