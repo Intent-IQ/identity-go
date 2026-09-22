@@ -11,6 +11,7 @@ import (
 // Enricher enriches an auction with resolved user identifiers.
 type Enricher interface {
 	Enrich(context.Context, Request) (Result, error)
+	Shutdown(context.Context) error
 }
 
 type Request struct {

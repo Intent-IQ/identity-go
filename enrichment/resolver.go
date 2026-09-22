@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Intent-IQ/identity-go/iiqapi"
@@ -12,6 +14,8 @@ import (
 )
 
 var (
+	ErrShuttingDown = errors.New("identity enricher is shutting down")
+
 	errS2SRequired                = errors.New("S2S API is required")
 	errNegativeBackgroundS2SLimit = errors.New("max background S2S calls must not be negative")
 	errTimeoutNotPositive         = errors.New("timeout must be positive")
@@ -22,12 +26,19 @@ var (
 )
 
 type enricher struct {
-	logger       logging.Logger
-	s2s          s2s.API
-	limiter      s2sLimiter
+	logger logging.Logger
+
+	s2s     s2s.API
+	limiter s2sLimiter
+
 	cache        Cache
 	maxCacheKeys int
-	metrics      Metrics
+
+	metrics Metrics
+
+	closing   atomic.Bool
+	drainOnce sync.Once
+	drained   chan struct{}
 }
 
 type executionPlan struct {
@@ -83,10 +94,15 @@ func New(deps Dependencies, maxCacheKeys int) (Enricher, error) {
 		logger:       deps.Logger,
 		maxCacheKeys: maxCacheKeys,
 		limiter:      newS2SLimiter(deps.MaxBackgroundS2SCalls),
+		drained:      make(chan struct{}),
 	}, nil
 }
 
 func (e *enricher) Enrich(ctx context.Context, req Request) (Result, error) {
+	if e.closing.Load() {
+		return Result{}, ErrShuttingDown
+	}
+
 	e.metrics.Request(req.PartnerID)
 
 	if !notBlank(req.Endpoint) {
@@ -188,8 +204,17 @@ func (e *enricher) schedule(ctx context.Context, plan executionPlan, job resolut
 		return e.runBounded(resolutionCtx, ctx, job)
 	}
 	if !e.limiter.TryAcquire() {
+		if e.closing.Load() {
+			return Result{}, ErrShuttingDown
+		}
 		e.metrics.NotEnriched(job.partnerID, ReasonBackgroundLimit)
 		return Result{Outcome: OutcomeBackgroundLimit}, nil
+	}
+	// Shutdown may have started between the first closing check and permit
+	// acquisition. Return the permit instead of admitting new background work.
+	if e.closing.Load() {
+		e.limiter.Release()
+		return Result{}, ErrShuttingDown
 	}
 	e.metrics.BackgroundStarted()
 
@@ -245,6 +270,23 @@ func (e *enricher) startBackground(task backgroundTask) {
 			e.storeResult(task.cacheCtx, task.job, result)
 		}
 	}()
+}
+
+func (e *enricher) Shutdown(ctx context.Context) error {
+	e.closing.Store(true)
+	e.drainOnce.Do(func() {
+		go func() {
+			e.limiter.Drain()
+			close(e.drained)
+		}()
+	})
+
+	select {
+	case <-e.drained:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (e *enricher) waitForResult(completion <-chan resolutionCompletion, wait time.Duration, partnerID string) (Result, error) {

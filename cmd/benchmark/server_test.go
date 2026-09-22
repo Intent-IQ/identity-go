@@ -21,6 +21,8 @@ func (stub *requestCapturingEnricher) Enrich(_ context.Context, request enrichme
 	return enrichment.Result{Outcome: enrichment.OutcomeNoIDs}, nil
 }
 
+func (*requestCapturingEnricher) Shutdown(context.Context) error { return nil }
+
 func TestBenchmarkHandlerSelectsWaitMode(t *testing.T) {
 	tests := []struct {
 		name     string

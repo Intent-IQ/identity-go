@@ -97,6 +97,8 @@ func (stub enricherStub) Enrich(context.Context, iiqidenrichment.Request) (iiqid
 	return stub.result, stub.err
 }
 
+func (enricherStub) Shutdown(context.Context) error { return nil }
+
 var _ iiqidenrichment.Enricher = enricherStub{}
 
 type requestRecordingEnricher struct {
@@ -108,6 +110,8 @@ func (recorder *requestRecordingEnricher) Enrich(_ context.Context, request iiqi
 	recorder.request = request
 	return recorder.result, nil
 }
+
+func (*requestRecordingEnricher) Shutdown(context.Context) error { return nil }
 
 func cacheConfigEnabled() iiqidcache.Config {
 	return iiqidcache.Config{Enabled: true}

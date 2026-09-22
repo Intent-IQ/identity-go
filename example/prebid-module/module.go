@@ -2,6 +2,7 @@
 package identitymodule
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -147,12 +148,19 @@ func (module *Module) MetricsGatherer() prometheus.Gatherer {
 }
 
 func (module *Module) Shutdown() error {
-	closeMetricsServer(module.metricsServer)
-	if module.store == nil {
-		return nil
+	if module.enricher != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*module.config.timeout()+time.Second)
+		defer cancel()
+		if err := module.enricher.Shutdown(ctx); err != nil {
+			return fmt.Errorf("shutdown identity enricher: %w", err)
+		}
 	}
 
-	return module.store.Close()
+	closeMetricsServer(module.metricsServer)
+	if module.store != nil {
+		return module.store.Close()
+	}
+	return nil
 }
 
 func (slogLogger) Debug(message string) { slog.Debug(message) }
