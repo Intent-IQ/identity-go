@@ -43,9 +43,9 @@ func BenchmarkEnrichAsync1000(b *testing.B) {
 	api := &benchmarkS2S{}
 	cache := benchmarkCache{completed: make(chan struct{}, asyncBenchmarkBatchSize)}
 	created, err := New(Dependencies{
-		S2S:                   api,
-		Cache:                 cache,
-		MaxBackgroundS2SCalls: asyncBenchmarkBatchSize,
+		S2S:                api,
+		Cache:              cache,
+		MaxConcurrentCalls: asyncBenchmarkBatchSize,
 	}, 1)
 	if err != nil {
 		b.Fatal(err)

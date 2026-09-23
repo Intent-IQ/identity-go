@@ -123,7 +123,7 @@ func (logger *recordingEnrichmentLogger) Warn(message string) {
 func newTestEnricher(t *testing.T, api *recordingS2S, metrics *recordingEnrichmentMetrics, logger *recordingEnrichmentLogger) Enricher {
 	t.Helper()
 	created, err := New(Dependencies{
-		S2S: api, Metrics: metrics, Logger: logger, MaxBackgroundS2SCalls: 10,
+		S2S: api, Metrics: metrics, Logger: logger, MaxConcurrentCalls: 10,
 	}, 10)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -135,7 +135,7 @@ func TestNewEnricher(t *testing.T) {
 	if _, err := New(Dependencies{}, 10); !errors.Is(err, errS2SRequired) {
 		t.Fatalf("New() error = %v, want %v", err, errS2SRequired)
 	}
-	if _, err := New(Dependencies{S2S: &recordingS2S{}, MaxBackgroundS2SCalls: -1}, 10); !errors.Is(err, errNegativeBackgroundS2SLimit) {
+	if _, err := New(Dependencies{S2S: &recordingS2S{}, MaxConcurrentCalls: -1}, 10); !errors.Is(err, errNegativeBackgroundS2SLimit) {
 		t.Fatalf("New() error = %v, want %v", err, errNegativeBackgroundS2SLimit)
 	}
 	created, err := New(Dependencies{S2S: &recordingS2S{}}, 7)
@@ -167,7 +167,7 @@ func TestEnrichValidatesRequest(t *testing.T) {
 		},
 		{
 			name:         "non-sync without cache",
-			dependencies: Dependencies{S2S: &recordingS2S{}, MaxBackgroundS2SCalls: 1},
+			dependencies: Dependencies{S2S: &recordingS2S{}, MaxConcurrentCalls: 1},
 			update:       func(request *Request) { request.WaitTimeout = &asyncWait },
 			want:         errNonSyncCacheRequired,
 		},

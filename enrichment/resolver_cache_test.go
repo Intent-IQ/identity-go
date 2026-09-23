@@ -175,7 +175,7 @@ func newCachedTestEnricher(
 ) Enricher {
 	t.Helper()
 	created, err := New(Dependencies{
-		S2S: api, Cache: cache, Metrics: metrics, Logger: logger, MaxBackgroundS2SCalls: 10,
+		S2S: api, Cache: cache, Metrics: metrics, Logger: logger, MaxConcurrentCalls: 10,
 	}, maxKeys)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -746,7 +746,7 @@ func TestEnrichAsyncSurvivesCallerCancellationButHonorsCallTimeout(t *testing.T)
 	}}
 	metrics := &signalingMetrics{apiError: make(chan struct{})}
 	cache := &recordingCache{result: CacheResult{State: CacheMiss}}
-	created, err := New(Dependencies{S2S: api, Cache: cache, Metrics: metrics, MaxBackgroundS2SCalls: 1}, 10)
+	created, err := New(Dependencies{S2S: api, Cache: cache, Metrics: metrics, MaxConcurrentCalls: 1}, 10)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -848,7 +848,7 @@ func TestConfiguredBackgroundCapacityBoundsPotentiallyDetachedCalls(t *testing.T
 	}}
 	cache := &recordingCache{result: CacheResult{State: CacheMiss}}
 	metrics := &recordingEnrichmentMetrics{}
-	created, err := New(Dependencies{S2S: api, Cache: cache, Metrics: metrics, MaxBackgroundS2SCalls: 1}, 10)
+	created, err := New(Dependencies{S2S: api, Cache: cache, Metrics: metrics, MaxConcurrentCalls: 1}, 10)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -903,7 +903,7 @@ func TestBackgroundLimiterSkippedForCacheResultsAndSyncCalls(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			api := &recordingS2S{response: s2s.Response{Data: json.RawMessage(`{"eids":[]}`)}}
 			cache := &recordingCache{result: test.cached}
-			created, err := New(Dependencies{S2S: api, Cache: cache, MaxBackgroundS2SCalls: 1}, 10)
+			created, err := New(Dependencies{S2S: api, Cache: cache, MaxConcurrentCalls: 1}, 10)
 			if err != nil {
 				t.Fatalf("New() error = %v", err)
 			}
@@ -930,7 +930,7 @@ func TestBackgroundPermitReleasedWhetherOrNotCallerWaits(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			api := &recordingS2S{response: s2s.Response{Data: json.RawMessage(`{"eids":[]}`)}}
 			cache := &recordingCache{result: CacheResult{State: CacheMiss}}
-			created, err := New(Dependencies{S2S: api, Cache: cache, MaxBackgroundS2SCalls: 1}, 10)
+			created, err := New(Dependencies{S2S: api, Cache: cache, MaxConcurrentCalls: 1}, 10)
 			if err != nil {
 				t.Fatalf("New() error = %v", err)
 			}

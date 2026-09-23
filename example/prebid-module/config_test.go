@@ -36,14 +36,14 @@ func TestConfigValidation(t *testing.T) {
 	}{
 		{name: "sync default", config: Config{Timeout: 1_000}},
 		{name: "sync equal without cache", config: Config{Timeout: 1_000, WaitTimeout: int64Pointer(1_000)}},
-		{name: "async with cache", config: Config{Timeout: 1_000, WaitTimeout: int64Pointer(0), Cache: validCache, MaxBackgroundS2SCalls: 10}},
-		{name: "hybrid with cache", config: Config{Timeout: 1_000, WaitTimeout: int64Pointer(500), Cache: validCache, MaxBackgroundS2SCalls: 10}},
+		{name: "async with cache", config: Config{Timeout: 1_000, WaitTimeout: int64Pointer(0), Cache: validCache, MaxConcurrentCalls: 10}},
+		{name: "hybrid with cache", config: Config{Timeout: 1_000, WaitTimeout: int64Pointer(500), Cache: validCache, MaxConcurrentCalls: 10}},
 		{name: "zero timeout", config: Config{}, wantErr: "timeout must be positive"},
 		{name: "negative wait", config: Config{Timeout: 1_000, WaitTimeout: int64Pointer(-1)}, wantErr: "wait_timeout must not be negative"},
-		{name: "negative capacity", config: Config{Timeout: 1_000, MaxBackgroundS2SCalls: -1}, wantErr: "max_background_s2s_calls must not be negative"},
+		{name: "negative capacity", config: Config{Timeout: 1_000, MaxConcurrentCalls: -1}, wantErr: "max_concurrent_calls must not be negative"},
 		{name: "async without cache", config: Config{Timeout: 1_000, WaitTimeout: int64Pointer(0)}, wantErr: "cache must be enabled"},
-		{name: "async without capacity", config: Config{Timeout: 1_000, WaitTimeout: int64Pointer(0), Cache: validCache}, wantErr: "max_background_s2s_calls must be positive"},
-		{name: "hybrid without capacity", config: Config{Timeout: 1_000, WaitTimeout: int64Pointer(500), Cache: validCache}, wantErr: "max_background_s2s_calls must be positive"},
+		{name: "async without capacity", config: Config{Timeout: 1_000, WaitTimeout: int64Pointer(0), Cache: validCache}, wantErr: "max_concurrent_calls must be positive"},
+		{name: "hybrid without capacity", config: Config{Timeout: 1_000, WaitTimeout: int64Pointer(500), Cache: validCache}, wantErr: "max_concurrent_calls must be positive"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -59,18 +59,18 @@ func TestConfigValidation(t *testing.T) {
 }
 
 func TestAccountOverlayCannotResizeModuleLimiter(t *testing.T) {
-	base := Config{Timeout: 1_000, MaxBackgroundS2SCalls: 25, Cache: iiqidcache.Config{Enabled: true}}
-	resolved := base.resolve(json.RawMessage(`{"wait_timeout":0,"max_background_s2s_calls":999}`))
+	base := Config{Timeout: 1_000, MaxConcurrentCalls: 25, Cache: iiqidcache.Config{Enabled: true}}
+	resolved := base.resolve(json.RawMessage(`{"wait_timeout":0,"max_concurrent_calls":999}`))
 	if resolved.WaitTimeout == nil || *resolved.WaitTimeout != 0 {
 		t.Fatalf("account wait timeout = %v, want explicit zero", resolved.WaitTimeout)
 	}
-	if resolved.MaxBackgroundS2SCalls != 25 {
-		t.Fatalf("account changed module capacity to %d", resolved.MaxBackgroundS2SCalls)
+	if resolved.MaxConcurrentCalls != 25 {
+		t.Fatalf("account changed module capacity to %d", resolved.MaxConcurrentCalls)
 	}
 }
 
 func TestInvalidAccountOverlayFallsBackToModuleConfig(t *testing.T) {
-	base := Config{Timeout: 1_000, MaxBackgroundS2SCalls: 25}
+	base := Config{Timeout: 1_000, MaxConcurrentCalls: 25}
 	resolved := base.resolve(json.RawMessage(`{"wait_timeout":0}`))
 	if resolved.WaitTimeout != nil || resolved.Timeout != base.Timeout {
 		t.Fatalf("invalid account overlay was applied: %#v", resolved)
@@ -78,7 +78,7 @@ func TestInvalidAccountOverlayFallsBackToModuleConfig(t *testing.T) {
 }
 
 func TestUnusableAccountOverlayKeepsModuleConfig(t *testing.T) {
-	base := Config{Timeout: 1_000, WaitTimeout: int64Pointer(2_000), MaxBackgroundS2SCalls: 25}
+	base := Config{Timeout: 1_000, WaitTimeout: int64Pointer(2_000), MaxConcurrentCalls: 25}
 	for _, test := range []struct {
 		name          string
 		accountConfig json.RawMessage

@@ -102,11 +102,11 @@ func Builder(rawConfig json.RawMessage, dependencies moduledeps.ModuleDeps) (int
 	}
 
 	enricher, err := iiqidenrichment.New(iiqidenrichment.Dependencies{
-		S2S:                   iiqids2s.NewClient(httpClient),
-		Cache:                 identityCache,
-		Metrics:               enrichmentMetrics,
-		Logger:                logger,
-		MaxBackgroundS2SCalls: config.MaxBackgroundS2SCalls,
+		S2S:                iiqids2s.NewClient(httpClient),
+		Cache:              identityCache,
+		Metrics:            enrichmentMetrics,
+		Logger:             logger,
+		MaxConcurrentCalls: config.MaxConcurrentCalls,
 	}, config.Cache.MaxKeys)
 	if err != nil {
 		if store != nil {

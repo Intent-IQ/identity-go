@@ -7,7 +7,7 @@ ITERATIONS=${ITERATIONS:-10000}
 VUS=${VUS:-16}
 TIMEOUT=${TIMEOUT:-400ms}
 HOOK_TIMEOUT_MS=${HOOK_TIMEOUT_MS:-300}
-MAX_BACKGROUND_S2S=${MAX_BACKGROUND_S2S:-2000}
+MAX_CONCURRENT_CALLS=${MAX_CONCURRENT_CALLS:-2000}
 PORT=${PORT:-8081}
 OUT=${OUT:-./results}
 CASES=${CASES:-"1 2 3 4 5 6"}
@@ -58,7 +58,7 @@ for number in $CASES; do
       -timeout "$TIMEOUT" \
       -concurrency "$VUS" \
       -cache "$directory/cache" \
-      -max-background-s2s-calls "$MAX_BACKGROUND_S2S" \
+      -max-concurrent-calls "$MAX_CONCURRENT_CALLS" \
       > "$directory/server.log" 2>&1 &
   server=$!
   trap 'kill $server 2>/dev/null || true' EXIT

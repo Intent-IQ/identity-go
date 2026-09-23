@@ -107,7 +107,7 @@ additional in-flight gauge.
 
 1. Deploy with `wait_timeout` omitted and confirm all new metric series exist.
 2. Select one low-risk region and configure a measured hybrid wait plus a finite
-   `max_background_s2s_calls`.
+   `max_concurrent_calls`.
 3. Hold through at least one representative peak window. Compare enrichment rate,
    auction latency, late outcomes, capacity rejection, API errors, and cache hits
    with the synchronous baseline.

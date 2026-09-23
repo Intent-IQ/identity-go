@@ -18,7 +18,7 @@ hooks:
         # Module-instance cap for S2S calls that may outlive their auction wait.
         # Required when wait_timeout is less than timeout. Account configuration
         # cannot override it.
-        max_background_s2s_calls: 2000
+        max_concurrent_calls: 2000
 
         metrics_enabled: true
         metrics_port: 9091

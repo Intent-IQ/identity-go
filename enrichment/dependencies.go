@@ -6,9 +6,9 @@ import (
 )
 
 type Dependencies struct {
-	Logger                logging.Logger
-	S2S                   s2s.API
-	MaxBackgroundS2SCalls int
-	Cache                 Cache
-	Metrics               Metrics
+	Logger             logging.Logger
+	S2S                s2s.API
+	MaxConcurrentCalls int
+	Cache              Cache
+	Metrics            Metrics
 }

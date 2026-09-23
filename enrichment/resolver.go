@@ -77,7 +77,7 @@ func New(deps Dependencies, maxCacheKeys int) (Enricher, error) {
 	if deps.S2S == nil {
 		return nil, errS2SRequired
 	}
-	if deps.MaxBackgroundS2SCalls < 0 {
+	if deps.MaxConcurrentCalls < 0 {
 		return nil, errNegativeBackgroundS2SLimit
 	}
 	if deps.Metrics == nil {
@@ -86,14 +86,14 @@ func New(deps Dependencies, maxCacheKeys int) (Enricher, error) {
 	if deps.Logger == nil {
 		deps.Logger = logging.NoopLogger{}
 	}
-	deps.Metrics.BackgroundCapacity(deps.MaxBackgroundS2SCalls)
+	deps.Metrics.BackgroundCapacity(deps.MaxConcurrentCalls)
 	return &enricher{
 		s2s:          deps.S2S,
 		cache:        deps.Cache,
 		metrics:      deps.Metrics,
 		logger:       deps.Logger,
 		maxCacheKeys: maxCacheKeys,
-		limiter:      newS2SLimiter(deps.MaxBackgroundS2SCalls),
+		limiter:      newS2SLimiter(deps.MaxConcurrentCalls),
 		drained:      make(chan struct{}),
 	}, nil
 }

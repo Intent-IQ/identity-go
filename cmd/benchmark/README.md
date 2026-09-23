@@ -15,7 +15,7 @@ go run . \
   -partner example-partner \
   -timeout 400ms \
   -cache /tmp/identity-benchmark-cache \
-  -max-background-s2s-calls 2000
+  -max-concurrent-calls 2000
 ```
 
 The cache is optional for sync mode and required for async and hybrid modes.
@@ -79,7 +79,7 @@ Common variables:
 | `CASES` | `1 2 3 4 5 6` | Cases to run |
 | `TIMEOUT` | `400ms` | S2S call timeout |
 | `HOOK_TIMEOUT_MS` | `300` | Simulated hook timeout |
-| `MAX_BACKGROUND_S2S` | `2000` | Async/hybrid S2S concurrency limit |
+| `MAX_CONCURRENT_CALLS` | `2000` | Async/hybrid S2S concurrency limit |
 | `FIXTURE` | `testdata/sample.jsonl` | JSONL fixture path, relative to `cmd/benchmark` |
 | `OUT` | `./results` | Result directory, relative to `cmd/benchmark` |
 
