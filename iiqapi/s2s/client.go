@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	iiqapi "github.com/Intent-IQ/identity-go/iiqapi"
+	"github.com/prebid/openrtb/v20/openrtb2"
 )
 
 const maxErrorSnippetSize = 1024
@@ -61,11 +62,38 @@ func (c *Client) Resolve(ctx context.Context, requestURL, consent string) (Respo
 	if len(bytes.TrimSpace(body)) == 0 {
 		return Response{Status: resp.StatusCode, EmptyBody: true}, nil
 	}
-	var result Response
-	if err := json.Unmarshal(body, &result); err != nil {
+	result, err := decodeResponse(body)
+	if err != nil {
 		return Response{}, &iiqapi.Error{Kind: iiqapi.ErrorParse, Status: resp.StatusCode, Err: err}
 	}
 	result.Status = resp.StatusCode
+	return result, nil
+}
+
+func decodeResponse(body []byte) (Response, error) {
+	var wire struct {
+		Data struct {
+			EIDs []openrtb2.EID `json:"eids"`
+		} `json:"data"`
+		CacheTTL   *int64 `json:"cttl"`
+		ABTestUUID string `json:"abTestUuid"`
+		TC         *int64 `json:"tc"`
+	}
+	if err := json.Unmarshal(body, &wire); err == nil {
+		return Response{
+			ResolvedEIDs: wire.Data.EIDs,
+			CacheTTL:     wire.CacheTTL,
+			ABTestUUID:   wire.ABTestUUID,
+			TC:           wire.TC,
+		}, nil
+	}
+
+	// Preserve the API's historically lenient handling of non-object data.
+	var result Response
+	if err := json.Unmarshal(body, &result); err != nil {
+		return Response{}, err
+	}
+	result.ResolvedEIDs = result.EIDs()
 	return result, nil
 }
 

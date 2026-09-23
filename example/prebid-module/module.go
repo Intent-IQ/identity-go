@@ -2,6 +2,7 @@
 package identitymodule
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -46,6 +47,9 @@ func Builder(rawConfig json.RawMessage, dependencies moduledeps.ModuleDeps) (int
 		if err := json.Unmarshal(rawConfig, &config); err != nil {
 			return nil, fmt.Errorf("intentiq identity: parse config: %w", err)
 		}
+	}
+	if err := config.validate(); err != nil {
+		return nil, fmt.Errorf("intentiq identity: invalid config: %w", err)
 	}
 
 	httpClient := dependencies.HTTPClient
@@ -98,10 +102,11 @@ func Builder(rawConfig json.RawMessage, dependencies moduledeps.ModuleDeps) (int
 	}
 
 	enricher, err := iiqidenrichment.New(iiqidenrichment.Dependencies{
-		S2S:     iiqids2s.NewClient(httpClient),
-		Cache:   identityCache,
-		Metrics: enrichmentMetrics,
-		Logger:  logger,
+		S2S:                iiqids2s.NewClient(httpClient),
+		Cache:              identityCache,
+		Metrics:            enrichmentMetrics,
+		Logger:             logger,
+		MaxConcurrentCalls: config.MaxConcurrentCalls,
 	}, config.Cache.MaxKeys)
 	if err != nil {
 		if store != nil {
@@ -143,12 +148,19 @@ func (module *Module) MetricsGatherer() prometheus.Gatherer {
 }
 
 func (module *Module) Shutdown() error {
-	closeMetricsServer(module.metricsServer)
-	if module.store == nil {
-		return nil
+	if module.enricher != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*module.config.timeout()+time.Second)
+		defer cancel()
+		if err := module.enricher.Shutdown(ctx); err != nil {
+			return fmt.Errorf("shutdown identity enricher: %w", err)
+		}
 	}
 
-	return module.store.Close()
+	closeMetricsServer(module.metricsServer)
+	if module.store != nil {
+		return module.store.Close()
+	}
+	return nil
 }
 
 func (slogLogger) Debug(message string) { slog.Debug(message) }

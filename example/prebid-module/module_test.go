@@ -50,6 +50,20 @@ func TestBuilderWithMetricsDisabledHasNoGatherer(t *testing.T) {
 	}
 }
 
+func TestBuilderRejectsInvalidWaitConfiguration(t *testing.T) {
+	for _, raw := range []string{
+		`{"timeout":0}`,
+		`{"timeout":1000,"wait_timeout":-1}`,
+		`{"timeout":1000,"max_concurrent_calls":-1}`,
+		`{"timeout":1000,"wait_timeout":0,"cache":{"enabled":false}}`,
+		`{"timeout":1000,"wait_timeout":0,"max_concurrent_calls":0,"cache":{"enabled":true}}`,
+	} {
+		if _, err := Builder([]byte(raw), moduledeps.ModuleDeps{}); err == nil {
+			t.Fatalf("Builder(%s) accepted invalid configuration", raw)
+		}
+	}
+}
+
 func TestStoreConfigurationValidation(t *testing.T) {
 	if store, err := newStore(Config{}); err != nil || store != nil {
 		t.Fatalf("disabled cache returned store=%v err=%v", store, err)

@@ -6,11 +6,13 @@ type NotEnrichedReason string
 type CacheLookupResult string
 
 const (
-	ReasonNoIDs       NotEnrichedReason = "no_ids"
-	ReasonNoIDsCached NotEnrichedReason = "no_ids_cached"
-	ReasonUnresolved  NotEnrichedReason = "unresolved"
-	ReasonInProgress  NotEnrichedReason = "in_progress"
-	ReasonNoEndpoint  NotEnrichedReason = "no_endpoint"
+	ReasonNoIDs           NotEnrichedReason = "no_ids"
+	ReasonNoIDsCached     NotEnrichedReason = "no_ids_cached"
+	ReasonUnresolved      NotEnrichedReason = "unresolved"
+	ReasonInProgress      NotEnrichedReason = "in_progress"
+	ReasonNoEndpoint      NotEnrichedReason = "no_endpoint"
+	ReasonWaitExpired     NotEnrichedReason = "wait_expired"
+	ReasonBackgroundLimit NotEnrichedReason = "background_limit"
 )
 
 const (
@@ -26,6 +28,9 @@ type Metrics interface {
 	APISuccess(partnerID string)
 	APIError(partnerID string, kind string, statusCode int)
 	CacheLookup(partnerID string, result CacheLookupResult, layer CacheLayer)
+	BackgroundCapacity(capacity int)
+	BackgroundStarted()
+	BackgroundFinished()
 }
 
 type NoopMetrics struct{}
@@ -37,5 +42,8 @@ func (NoopMetrics) APIRequestDuration(string, time.Duration)          {}
 func (NoopMetrics) APISuccess(string)                                 {}
 func (NoopMetrics) APIError(string, string, int)                      {}
 func (NoopMetrics) CacheLookup(string, CacheLookupResult, CacheLayer) {}
+func (NoopMetrics) BackgroundCapacity(int)                            {}
+func (NoopMetrics) BackgroundStarted()                                {}
+func (NoopMetrics) BackgroundFinished()                               {}
 
 var _ Metrics = NoopMetrics{}

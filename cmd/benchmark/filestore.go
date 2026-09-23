@@ -14,8 +14,6 @@ import (
 
 const expiryPrefixSize = 8
 
-// fileStore is a cache.Store kept on disk so entries survive between replay runs.
-// The in-process L1 cannot do that, and a warm re-run is the point of -cache.
 type fileStore struct{ dir string }
 
 func newFileStore(dir string) (*fileStore, error) {
@@ -25,14 +23,12 @@ func newFileStore(dir string) (*fileStore, error) {
 	return &fileStore{dir: dir}, nil
 }
 
-// path shards by the first byte of the key digest to keep directories small.
 func (store *fileStore) path(key string) string {
 	digest := sha256.Sum256([]byte(key))
 	name := hex.EncodeToString(digest[:])
 	return filepath.Join(store.dir, name[:2], name[2:])
 }
 
-// Get reports a miss as (nil, nil); an error would be recorded as an L2 fault.
 func (store *fileStore) Get(_ context.Context, key string) ([]byte, error) {
 	path := store.path(key)
 	contents, err := os.ReadFile(path)
@@ -65,7 +61,7 @@ func (store *fileStore) Put(_ context.Context, key string, value []byte, ttl tim
 	binary.BigEndian.PutUint64(buffer, uint64(time.Now().Add(ttl).UnixNano()))
 	buffer = append(buffer, value...)
 
-	// Workers share keys, so stage under a unique name before the atomic rename.
+	// Concurrent writes are committed atomically.
 	staged, err := os.CreateTemp(filepath.Dir(path), "staging-")
 	if err != nil {
 		return err
@@ -83,3 +79,10 @@ func (store *fileStore) Put(_ context.Context, key string, value []byte, ttl tim
 }
 
 func (store *fileStore) Close() error { return nil }
+
+func ensurePrivateDir(path string) error {
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o700)
+}

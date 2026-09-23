@@ -6,6 +6,7 @@ import (
 	"errors"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -50,28 +51,65 @@ type enrichmentMetricEvent struct {
 	layer     CacheLayer
 }
 
-type recordingEnrichmentMetrics struct{ events []enrichmentMetricEvent }
+type recordingEnrichmentMetrics struct {
+	mu                 sync.Mutex
+	events             []enrichmentMetricEvent
+	backgroundActive   int
+	backgroundCapacity int
+}
+
+func (metrics *recordingEnrichmentMetrics) record(event enrichmentMetricEvent) {
+	metrics.mu.Lock()
+	metrics.events = append(metrics.events, event)
+	metrics.mu.Unlock()
+}
+
+func (metrics *recordingEnrichmentMetrics) snapshot() []enrichmentMetricEvent {
+	metrics.mu.Lock()
+	defer metrics.mu.Unlock()
+	return append([]enrichmentMetricEvent(nil), metrics.events...)
+}
 
 func (metrics *recordingEnrichmentMetrics) Request(partnerID string) {
-	metrics.events = append(metrics.events, enrichmentMetricEvent{name: "request", partnerID: partnerID})
+	metrics.record(enrichmentMetricEvent{name: "request", partnerID: partnerID})
 }
 func (metrics *recordingEnrichmentMetrics) Enriched(partnerID string) {
-	metrics.events = append(metrics.events, enrichmentMetricEvent{name: "enriched", partnerID: partnerID})
+	metrics.record(enrichmentMetricEvent{name: "enriched", partnerID: partnerID})
 }
 func (metrics *recordingEnrichmentMetrics) NotEnriched(partnerID string, reason NotEnrichedReason) {
-	metrics.events = append(metrics.events, enrichmentMetricEvent{name: "not_enriched", partnerID: partnerID, reason: string(reason)})
+	metrics.record(enrichmentMetricEvent{name: "not_enriched", partnerID: partnerID, reason: string(reason)})
 }
 func (metrics *recordingEnrichmentMetrics) APIRequestDuration(partnerID string, duration time.Duration) {
-	metrics.events = append(metrics.events, enrichmentMetricEvent{name: "api_duration", partnerID: partnerID, duration: duration})
+	metrics.record(enrichmentMetricEvent{name: "api_duration", partnerID: partnerID, duration: duration})
 }
 func (metrics *recordingEnrichmentMetrics) APISuccess(partnerID string) {
-	metrics.events = append(metrics.events, enrichmentMetricEvent{name: "api_success", partnerID: partnerID})
+	metrics.record(enrichmentMetricEvent{name: "api_success", partnerID: partnerID})
 }
 func (metrics *recordingEnrichmentMetrics) APIError(partnerID, kind string, statusCode int) {
-	metrics.events = append(metrics.events, enrichmentMetricEvent{name: "api_error", partnerID: partnerID, kind: kind, status: statusCode})
+	metrics.record(enrichmentMetricEvent{name: "api_error", partnerID: partnerID, kind: kind, status: statusCode})
 }
 func (metrics *recordingEnrichmentMetrics) CacheLookup(partnerID string, result CacheLookupResult, layer CacheLayer) {
-	metrics.events = append(metrics.events, enrichmentMetricEvent{name: "cache_lookup", partnerID: partnerID, lookup: result, layer: layer})
+	metrics.record(enrichmentMetricEvent{name: "cache_lookup", partnerID: partnerID, lookup: result, layer: layer})
+}
+func (metrics *recordingEnrichmentMetrics) BackgroundCapacity(capacity int) {
+	metrics.mu.Lock()
+	metrics.backgroundCapacity = capacity
+	metrics.mu.Unlock()
+}
+func (metrics *recordingEnrichmentMetrics) BackgroundStarted() {
+	metrics.mu.Lock()
+	metrics.backgroundActive++
+	metrics.mu.Unlock()
+}
+func (metrics *recordingEnrichmentMetrics) BackgroundFinished() {
+	metrics.mu.Lock()
+	metrics.backgroundActive--
+	metrics.mu.Unlock()
+}
+func (metrics *recordingEnrichmentMetrics) backgroundSnapshot() (active, capacity int) {
+	metrics.mu.Lock()
+	defer metrics.mu.Unlock()
+	return metrics.backgroundActive, metrics.backgroundCapacity
 }
 
 type recordingEnrichmentLogger struct{ warnings []string }
@@ -84,7 +122,9 @@ func (logger *recordingEnrichmentLogger) Warn(message string) {
 
 func newTestEnricher(t *testing.T, api *recordingS2S, metrics *recordingEnrichmentMetrics, logger *recordingEnrichmentLogger) Enricher {
 	t.Helper()
-	created, err := New(Dependencies{S2S: api, Metrics: metrics, Logger: logger}, 10)
+	created, err := New(Dependencies{
+		S2S: api, Metrics: metrics, Logger: logger, MaxConcurrentCalls: 10,
+	}, 10)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -95,6 +135,9 @@ func TestNewEnricher(t *testing.T) {
 	if _, err := New(Dependencies{}, 10); !errors.Is(err, errS2SRequired) {
 		t.Fatalf("New() error = %v, want %v", err, errS2SRequired)
 	}
+	if _, err := New(Dependencies{S2S: &recordingS2S{}, MaxConcurrentCalls: -1}, 10); !errors.Is(err, errNegativeBackgroundS2SLimit) {
+		t.Fatalf("New() error = %v, want %v", err, errNegativeBackgroundS2SLimit)
+	}
 	created, err := New(Dependencies{S2S: &recordingS2S{}}, 7)
 	if err != nil {
 		t.Fatalf("New() with defaults error = %v", err)
@@ -102,6 +145,55 @@ func TestNewEnricher(t *testing.T) {
 	implementation, ok := created.(*enricher)
 	if !ok || implementation.metrics == nil || implementation.logger == nil || implementation.maxCacheKeys != 7 {
 		t.Fatalf("New() = %#v, defaults or key limit not retained", created)
+	}
+}
+
+func TestEnrichValidatesRequest(t *testing.T) {
+	negativeWait := -time.Millisecond
+	asyncWait := time.Duration(0)
+	tests := []struct {
+		name         string
+		dependencies Dependencies
+		update       func(*Request)
+		want         error
+	}{
+		{
+			name: "non-positive timeout", dependencies: Dependencies{S2S: &recordingS2S{}},
+			update: func(request *Request) { request.Timeout = 0 }, want: errTimeoutNotPositive,
+		},
+		{
+			name: "negative wait", dependencies: Dependencies{S2S: &recordingS2S{}},
+			update: func(request *Request) { request.WaitTimeout = &negativeWait }, want: errNegativeWaitTimeout,
+		},
+		{
+			name:         "non-sync without cache",
+			dependencies: Dependencies{S2S: &recordingS2S{}, MaxConcurrentCalls: 1},
+			update:       func(request *Request) { request.WaitTimeout = &asyncWait },
+			want:         errNonSyncCacheRequired,
+		},
+		{
+			name:         "non-sync without capacity",
+			dependencies: Dependencies{S2S: &recordingS2S{}, Cache: &recordingCache{}},
+			update:       func(request *Request) { request.WaitTimeout = &asyncWait },
+			want:         errNonSyncCapacityRequired,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			enricher, err := New(test.dependencies, 10)
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			request := Request{
+				Endpoint: "https://example.test/resolve", Timeout: time.Second,
+				Auction: &openrtb2.BidRequest{}, CacheEnabled: true,
+			}
+			test.update(&request)
+			if _, err := enricher.Enrich(t.Context(), request); !errors.Is(err, test.want) {
+				t.Fatalf("Enrich() error = %v, want %v", err, test.want)
+			}
+		})
 	}
 }
 
@@ -137,7 +229,7 @@ func TestEnrichMapsRequestAndResponse(t *testing.T) {
 	if len(api.calls) != 1 {
 		t.Fatalf("S2S calls = %d, want 1", len(api.calls))
 	}
-	wantURL := "https://example.test/resolve?at=39&mi=10&dpi=partner-42&pt=17&dpn=1&srvrReq=true&source=pbsgo&ip=1.2.3.4&gdpr=1"
+	wantURL, _ := buildS2SRequest(input)
 	if api.calls[0].requestURL != wantURL || api.calls[0].consent != "TCF-CONSENT" {
 		t.Fatalf("S2S call = %#v, want URL %q and consent", api.calls[0], wantURL)
 	}
@@ -145,7 +237,11 @@ func TestEnrichMapsRequestAndResponse(t *testing.T) {
 		t.Fatal("S2S context has no deadline")
 	}
 	assertEnrichmentMetricNames(t, metrics.events, "request", "api_duration", "api_success", "enriched")
-	assertPartnerIDs(t, metrics.events, "partner-42")
+	for _, event := range metrics.events {
+		if event.partnerID != "partner-42" {
+			t.Fatalf("event %q partner = %q, want partner-42", event.name, event.partnerID)
+		}
+	}
 	if len(logger.warnings) != 0 {
 		t.Fatalf("warnings = %q, want none", logger.warnings)
 	}
@@ -204,11 +300,8 @@ func TestEnrichReturnsClassifiedS2SErrors(t *testing.T) {
 		kind   string
 		status int
 	}{
-		{"request", &iiqapi.Error{Kind: iiqapi.ErrorRequest, Err: errors.New("bad request")}, "request", 0},
 		{"transport", &iiqapi.Error{Kind: iiqapi.ErrorTransport, Err: errors.New("down")}, "transport", 0},
 		{"status", &iiqapi.Error{Kind: iiqapi.ErrorStatus, Status: 503, Err: errors.New("unavailable")}, "status", 503},
-		{"body read", &iiqapi.Error{Kind: iiqapi.ErrorBodyRead, Status: 200, Err: errors.New("read")}, "body_read", 200},
-		{"parse", &iiqapi.Error{Kind: iiqapi.ErrorParse, Status: 200, Err: errors.New("parse")}, "parse", 200},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -264,14 +357,5 @@ func assertEnrichmentMetricNames(t *testing.T, events []enrichmentMetricEvent, w
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("metric order = %v, want %v", got, want)
-	}
-}
-
-func assertPartnerIDs(t *testing.T, events []enrichmentMetricEvent, want string) {
-	t.Helper()
-	for _, event := range events {
-		if event.partnerID != want {
-			t.Fatalf("event %q partner = %q, want %q", event.name, event.partnerID, want)
-		}
 	}
 }

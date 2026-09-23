@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
+	iiqidcache "github.com/Intent-IQ/identity-go/cache"
 	iiqidenrichment "github.com/Intent-IQ/identity-go/enrichment"
 	"github.com/prebid/openrtb/v20/openrtb2"
 	"github.com/prebid/prebid-server/v4/hooks/hookstage"
@@ -61,6 +63,31 @@ func TestProcessedAuctionRequestFailsOpen(t *testing.T) {
 	}
 }
 
+func TestProcessedAuctionRequestPassesWaitTimeoutAndLeavesExpiredAuctionUnchanged(t *testing.T) {
+	wait := int64(0)
+	recorder := &requestRecordingEnricher{result: iiqidenrichment.Result{Outcome: iiqidenrichment.OutcomeWaitExpired}}
+	module := &Module{
+		config: Config{
+			PartnerID: "partner", APIEndpoint: "endpoint", Timeout: 250,
+			WaitTimeout: &wait, Cache: cacheConfigEnabled(), MaxConcurrentCalls: 10,
+		},
+		enricher: recorder,
+	}
+	auction := &openrtb2.BidRequest{User: &openrtb2.User{EIDs: []openrtb2.EID{{Source: "existing.example"}}}}
+	payload := hookstage.ProcessedAuctionRequestPayload{Request: &openrtb_ext.RequestWrapper{BidRequest: auction}}
+
+	result, err := module.HandleProcessedAuctionHook(t.Context(), hookstage.ModuleInvocationContext{}, payload)
+	if err != nil || result.Reject || len(result.ChangeSet.Mutations()) != 0 {
+		t.Fatalf("hook result=%#v err=%v", result, err)
+	}
+	if recorder.request.WaitTimeout == nil || *recorder.request.WaitTimeout != 0 || recorder.request.Timeout != 250*time.Millisecond || !recorder.request.CacheEnabled {
+		t.Fatalf("enrichment request = %#v", recorder.request)
+	}
+	if len(auction.User.EIDs) != 1 || auction.User.EIDs[0].Source != "existing.example" {
+		t.Fatalf("wait-expired auction was mutated: %#v", auction.User.EIDs)
+	}
+}
+
 type enricherStub struct {
 	result iiqidenrichment.Result
 	err    error
@@ -70,4 +97,24 @@ func (stub enricherStub) Enrich(context.Context, iiqidenrichment.Request) (iiqid
 	return stub.result, stub.err
 }
 
+func (enricherStub) Shutdown(context.Context) error { return nil }
+
 var _ iiqidenrichment.Enricher = enricherStub{}
+
+type requestRecordingEnricher struct {
+	request iiqidenrichment.Request
+	result  iiqidenrichment.Result
+}
+
+func (recorder *requestRecordingEnricher) Enrich(_ context.Context, request iiqidenrichment.Request) (iiqidenrichment.Result, error) {
+	recorder.request = request
+	return recorder.result, nil
+}
+
+func (*requestRecordingEnricher) Shutdown(context.Context) error { return nil }
+
+func cacheConfigEnabled() iiqidcache.Config {
+	return iiqidcache.Config{Enabled: true}
+}
+
+var _ iiqidenrichment.Enricher = (*requestRecordingEnricher)(nil)

@@ -14,4 +14,7 @@ func TestNoopMetrics(t *testing.T) {
 	metrics.APISuccess("partner")
 	metrics.APIError("partner", "timeout", 0)
 	metrics.CacheLookup("partner", CacheLookupMiss, CacheLayerNone)
+	metrics.BackgroundCapacity(10)
+	metrics.BackgroundStarted()
+	metrics.BackgroundFinished()
 }
