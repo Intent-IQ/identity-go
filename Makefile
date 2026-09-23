@@ -36,7 +36,7 @@ ITERATIONS ?= 1000
 VUS ?= 16
 TIMEOUT ?= 400ms
 HOOK_TIMEOUT_MS ?= 300
-MAX_BACKGROUND_S2S ?= 2000
+MAX_CONCURRENT_CALLS ?= 2000
 FIXTURE ?= testdata/sample.jsonl
 CASES ?= 1 2 3 4 5 6
 OUT ?= ./results
@@ -52,7 +52,7 @@ benchmark: ## Run the k6 enrichment benchmark
 		VUS="$(VUS)" \
 		TIMEOUT="$(TIMEOUT)" \
 		HOOK_TIMEOUT_MS="$(HOOK_TIMEOUT_MS)" \
-		MAX_BACKGROUND_S2S="$(MAX_BACKGROUND_S2S)" \
+		MAX_CONCURRENT_CALLS="$(MAX_CONCURRENT_CALLS)" \
 		FIXTURE="$(FIXTURE)" \
 		CASES="$(CASES)" \
 		OUT="$(OUT)" \
