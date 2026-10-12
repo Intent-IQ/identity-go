@@ -8,6 +8,7 @@ import (
 
 	identitycache "github.com/Intent-IQ/identity-go/cache"
 	"github.com/Intent-IQ/identity-go/enrichment"
+	"github.com/Intent-IQ/identity-go/reporting"
 	prom "github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
@@ -93,9 +94,23 @@ func TestReportingMetrics(t *testing.T) {
 	metrics.ImpressionReported("partner-a")
 	metrics.ImpressionReported("partner-a")
 	metrics.ImpressionError("partner-b")
+	metrics.ImpressionRejected("partner-b", reporting.ReportAtCapacity)
+	metrics.ImpressionRejected("partner-b", reporting.ReportShuttingDown)
+	metrics.ImpressionAPIRequestDuration("partner-a", 250*time.Millisecond)
+	metrics.ReportingCapacity(8)
+	metrics.ReportingStarted()
 
 	assertCounter(t, metrics.impressionReported.WithLabelValues("partner-a"), 2)
 	assertCounter(t, metrics.impressionError.WithLabelValues("partner-b"), 1)
+	assertCounter(t, metrics.impressionRejected.WithLabelValues("at_capacity", "partner-b"), 1)
+	assertCounter(t, metrics.impressionRejected.WithLabelValues("shutting_down", "partner-b"), 1)
+	assertGauge(t, metrics.reportingActive, 1)
+	assertGauge(t, metrics.reportingCapacity, 8)
+	metrics.ReportingFinished()
+	assertGauge(t, metrics.reportingActive, 0)
+	if got := testutil.CollectAndCount(metrics.impressionLatency); got != 1 {
+		t.Fatalf("impression latency histogram count = %d, want 1", got)
+	}
 	assertMetricLabel(t, registry, "iiq_identity_impression_reported_total", "partner_id", "partner-a")
 	assertMetricLabel(t, registry, "iiq_identity_impression_error_total", "partner_id", "partner-b")
 }
@@ -111,6 +126,10 @@ func TestLatencyObservationsAndMetricNames(t *testing.T) {
 	metrics.APIRequestDuration("partner", 150*time.Millisecond)
 	metrics.ImpressionReported("partner")
 	metrics.ImpressionError("partner")
+	metrics.ImpressionRejected("partner", reporting.ReportAtCapacity)
+	metrics.ImpressionAPIRequestDuration("partner", 200*time.Millisecond)
+	metrics.ReportingCapacity(10)
+	metrics.ReportingStarted()
 	metrics.L2GetLatency(500 * time.Microsecond)
 	metrics.L2PutLatency(time.Millisecond)
 	metrics.L2Request("get", "hit")
@@ -135,18 +154,23 @@ func TestLatencyObservationsAndMetricNames(t *testing.T) {
 		"iiq_identity_background_capacity",
 		"iiq_identity_cache_lookup_total",
 		"iiq_identity_enriched_total",
+		"iiq_identity_impression_api_latency_seconds",
 		"iiq_identity_impression_error_total",
+		"iiq_identity_impression_rejected_total",
 		"iiq_identity_impression_reported_total",
 		"iiq_identity_l2_get_latency_seconds",
 		"iiq_identity_l2_put_latency_seconds",
 		"iiq_identity_l2_requests_total",
 		"iiq_identity_not_enriched_total",
+		"iiq_identity_reporting_active",
+		"iiq_identity_reporting_capacity",
 		"iiq_identity_requests_total",
 	}
 	if !reflect.DeepEqual(names, want) {
 		t.Fatalf("metric names = %q, want %q", names, want)
 	}
 	assertHistogram(t, families, "iiq_identity_api_latency_seconds", 1, .15)
+	assertHistogram(t, families, "iiq_identity_impression_api_latency_seconds", 1, .2)
 	assertHistogram(t, families, "iiq_identity_l2_get_latency_seconds", 1, .0005)
 	assertHistogram(t, families, "iiq_identity_l2_put_latency_seconds", 1, .001)
 	for _, removed := range []string{"iiq_identity_l1_put_error_total", "iiq_identity_l1_size", "iiq_identity_l1_eviction"} {
@@ -173,7 +197,7 @@ func TestNewReusesCollectorsWithoutDuplicateRegistration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second New() error = %v", err)
 	}
-	if first.requests != second.requests || first.impressionReported != second.impressionReported || first.impressionError != second.impressionError || first.l2GetLatency != second.l2GetLatency {
+	if first.requests != second.requests || first.impressionReported != second.impressionReported || first.impressionError != second.impressionError || first.impressionRejected != second.impressionRejected || first.impressionLatency != second.impressionLatency || first.reportingActive != second.reportingActive || first.reportingCapacity != second.reportingCapacity || first.l2GetLatency != second.l2GetLatency {
 		t.Fatal("New() did not reuse already registered collectors")
 	}
 	first.Request("partner")

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	iiqreporting "github.com/Intent-IQ/identity-go/iiqapi/reporting"
 	"github.com/Intent-IQ/identity-go/logging"
@@ -42,6 +43,7 @@ func New(dependencies Dependencies, config Config) (Reporter, error) {
 	if dependencies.Logger == nil {
 		dependencies.Logger = logging.NoopLogger{}
 	}
+	dependencies.Metrics.ReportingCapacity(config.MaxConcurrentCalls)
 
 	reportContext, cancelReports := context.WithCancel(context.Background())
 	return &reporter{
@@ -57,31 +59,34 @@ func New(dependencies Dependencies, config Config) (Reporter, error) {
 
 func (reporter *reporter) TryReport(request Request) ReportResult {
 	if reporter.closing.Load() {
-		reporter.logRejected(request.PartnerID, ReportShuttingDown)
+		reporter.reject(request.PartnerID, ReportShuttingDown)
 		return ReportShuttingDown
 	}
 	if !reporter.limiter.TryAcquire() {
 		if reporter.closing.Load() {
-			reporter.logRejected(request.PartnerID, ReportShuttingDown)
+			reporter.reject(request.PartnerID, ReportShuttingDown)
 			return ReportShuttingDown
 		}
-		reporter.logRejected(request.PartnerID, ReportAtCapacity)
+		reporter.reject(request.PartnerID, ReportAtCapacity)
 		return ReportAtCapacity
 	}
 	if reporter.closing.Load() {
 		reporter.limiter.Release()
-		reporter.logRejected(request.PartnerID, ReportShuttingDown)
+		reporter.reject(request.PartnerID, ReportShuttingDown)
 		return ReportShuttingDown
 	}
 
+	reporter.metrics.ReportingStarted()
 	go func() {
 		defer reporter.limiter.Release()
+		defer reporter.metrics.ReportingFinished()
 		_ = reporter.report(reporter.reportContext, request)
 	}()
 	return ReportAccepted
 }
 
-func (reporter *reporter) logRejected(partnerID string, result ReportResult) {
+func (reporter *reporter) reject(partnerID string, result ReportResult) {
+	reporter.metrics.ImpressionRejected(partnerID, result)
 	reporter.logger.Warn(fmt.Sprintf(
 		"intentiq-identity: impression report rejected (dpi=%s): %s",
 		partnerID, result,
@@ -97,6 +102,10 @@ func (reporter *reporter) report(ctx context.Context, request Request) error {
 	reportContext, cancel := context.WithTimeout(ctx, request.Timeout)
 	defer cancel()
 
+	started := time.Now()
+	defer func() {
+		reporter.metrics.ImpressionAPIRequestDuration(request.PartnerID, time.Since(started))
+	}()
 	if err := reporter.api.ReportImpression(reportContext, requestURL); err != nil {
 		reporter.metrics.ImpressionError(request.PartnerID)
 		reporter.logger.Warn(fmt.Sprintf("intentiq-identity: impression report failed (dpi=%s): %v", request.PartnerID, err))

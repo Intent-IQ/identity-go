@@ -14,6 +14,7 @@ func TestReporterBoundsConcurrentCalls(t *testing.T) {
 	release := make(chan struct{})
 	var active atomic.Int64
 	var maximum atomic.Int64
+	metrics := &reportingMetricsStub{}
 	api := &reportingAPIStub{call: func(ctx context.Context, _ string) error {
 		current := active.Add(1)
 		defer active.Add(-1)
@@ -32,7 +33,7 @@ func TestReporterBoundsConcurrentCalls(t *testing.T) {
 		}
 	}}
 	value, err := New(
-		Dependencies{API: api, Logger: &reportingLoggerStub{events: events}},
+		Dependencies{API: api, Metrics: metrics, Logger: &reportingLoggerStub{events: events}},
 		Config{MaxConcurrentCalls: 2},
 	)
 	if err != nil {
@@ -50,6 +51,12 @@ func TestReporterBoundsConcurrentCalls(t *testing.T) {
 	if got := value.TryReport(baseReportingRequest()); got != ReportAtCapacity {
 		t.Fatalf("saturated report result = %q, want %q", got, ReportAtCapacity)
 	}
+	if got := metrics.rejectedCount(ReportAtCapacity); got != 1 {
+		t.Fatalf("at-capacity rejections = %d, want 1", got)
+	}
+	if gotActive, gotCapacity := metrics.reportingState(); gotActive != 2 || gotCapacity != 2 {
+		t.Fatalf("reporting state = active %d capacity %d, want active 2 capacity 2", gotActive, gotCapacity)
+	}
 	assertEvents(t, events, "warn:intentiq-identity: impression report rejected (dpi=partner): at_capacity")
 	if got := maximum.Load(); got != 2 {
 		t.Fatalf("maximum active reports = %d, want 2", got)
@@ -63,6 +70,12 @@ func TestReporterBoundsConcurrentCalls(t *testing.T) {
 	}
 	if got := value.TryReport(baseReportingRequest()); got != ReportShuttingDown {
 		t.Fatalf("post-shutdown report result = %q, want %q", got, ReportShuttingDown)
+	}
+	if got := metrics.rejectedCount(ReportShuttingDown); got != 1 {
+		t.Fatalf("shutdown rejections = %d, want 1", got)
+	}
+	if gotActive, gotCapacity := metrics.reportingState(); gotActive != 0 || gotCapacity != 2 {
+		t.Fatalf("reporting state after shutdown = active %d capacity %d, want active 0 capacity 2", gotActive, gotCapacity)
 	}
 	assertEvents(t, events,
 		"warn:intentiq-identity: impression report rejected (dpi=partner): at_capacity",

@@ -77,6 +77,9 @@ func TestReporterSuccessForwardsExactURLAndRecordsMetric(t *testing.T) {
 		t.Fatalf("API URL = %q, want %q", got, wantURL)
 	}
 	assertEvents(t, recorder, "api", "reported:partner")
+	if got := metrics.latencyCount(); got != 1 {
+		t.Fatalf("latency observations = %d, want 1", got)
+	}
 }
 
 func TestReporterReturnsOriginalAPIErrorsAndRecordsFailure(t *testing.T) {
@@ -251,10 +254,29 @@ func (api *reportingAPIStub) lastURL() string {
 }
 
 type reportingMetricsStub struct {
-	mutex    sync.Mutex
-	reported int
-	errors   int
-	events   *eventRecorder
+	mutex     sync.Mutex
+	reported  int
+	errors    int
+	rejected  map[ReportResult]int
+	latencies []time.Duration
+	active    int
+	capacity  int
+	events    *eventRecorder
+}
+
+func (metrics *reportingMetricsStub) ImpressionRejected(_ string, reason ReportResult) {
+	metrics.mutex.Lock()
+	defer metrics.mutex.Unlock()
+	if metrics.rejected == nil {
+		metrics.rejected = make(map[ReportResult]int)
+	}
+	metrics.rejected[reason]++
+}
+
+func (metrics *reportingMetricsStub) ImpressionAPIRequestDuration(_ string, duration time.Duration) {
+	metrics.mutex.Lock()
+	defer metrics.mutex.Unlock()
+	metrics.latencies = append(metrics.latencies, duration)
 }
 
 func (metrics *reportingMetricsStub) ImpressionReported(partnerID string) {
@@ -279,6 +301,42 @@ func (metrics *reportingMetricsStub) reportedCount() int {
 	metrics.mutex.Lock()
 	defer metrics.mutex.Unlock()
 	return metrics.reported
+}
+
+func (metrics *reportingMetricsStub) ReportingCapacity(capacity int) {
+	metrics.mutex.Lock()
+	defer metrics.mutex.Unlock()
+	metrics.capacity = capacity
+}
+
+func (metrics *reportingMetricsStub) ReportingStarted() {
+	metrics.mutex.Lock()
+	defer metrics.mutex.Unlock()
+	metrics.active++
+}
+
+func (metrics *reportingMetricsStub) ReportingFinished() {
+	metrics.mutex.Lock()
+	defer metrics.mutex.Unlock()
+	metrics.active--
+}
+
+func (metrics *reportingMetricsStub) reportingState() (active, capacity int) {
+	metrics.mutex.Lock()
+	defer metrics.mutex.Unlock()
+	return metrics.active, metrics.capacity
+}
+
+func (metrics *reportingMetricsStub) rejectedCount(reason ReportResult) int {
+	metrics.mutex.Lock()
+	defer metrics.mutex.Unlock()
+	return metrics.rejected[reason]
+}
+
+func (metrics *reportingMetricsStub) latencyCount() int {
+	metrics.mutex.Lock()
+	defer metrics.mutex.Unlock()
+	return len(metrics.latencies)
 }
 
 type reportingLoggerStub struct {
