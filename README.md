@@ -7,7 +7,7 @@ The library contains the reusable business flow and HTTP clients. Host applicati
 ## Packages
 
 - `enrichment` resolves EIDs through the IntentIQ S2S API, optionally using the two-layer cache.
-- `reporting` builds and submits one impression report synchronously. The host may run it asynchronously.
+- `reporting` submits impression reports with bounded concurrency.
 - `cache` provides the generic FreeCache L1 plus a shared L2 `Store` abstraction.
 - `iiqapi/s2s` and `iiqapi/reporting` provide the low-level HTTP clients.
 - `logging` and `clock` provide host-independent dependency interfaces.
@@ -51,23 +51,26 @@ Reporting is a separate flow:
 ```go
 reporter, err := reporting.New(reporting.Dependencies{
 	API: reportingapi.NewClient(http.DefaultClient),
-})
+}, reporting.Config{MaxConcurrentCalls: 16})
 if err != nil {
 	return err
 }
 
-go func() {
-	_ = reporter.Report(context.Background(), reporting.Request{
-		PartnerID: "your-partner-id",
-		Endpoint:  "https://your-reporting-endpoint",
-		Timeout:   time.Second,
-		Bid:       bid,
-		Currency:  currency,
-	})
-}()
+_ = reporter.TryReport(reporting.Request{
+	PartnerID: "your-partner-id",
+	Endpoint:  "https://your-reporting-endpoint",
+	Timeout:   time.Second,
+	Bid:       bid,
+	Currency:  currency,
+})
+
+shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()
+_ = reporter.Shutdown(shutdownContext)
 ```
 
-The host owns bid iteration, goroutine creation, background context selection, and panic recovery. See the examples for complete wiring.
+`TryReport` is non-blocking and returns `ReportAccepted`, `ReportAtCapacity`, or
+`ReportShuttingDown`. Rejections are logged. See the examples for complete wiring.
 
 ## Examples
 

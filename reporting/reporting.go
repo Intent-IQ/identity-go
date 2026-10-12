@@ -8,11 +8,25 @@ import (
 	"github.com/prebid/openrtb/v20/openrtb2"
 )
 
-// Reporter reports one bid impression. The caller controls synchronous or
-// asynchronous execution.
+// Reporter asynchronously reports impressions with bounded concurrency.
 type Reporter interface {
-	Report(context.Context, Request) error
+	// TryReport attempts to start a report without blocking and returns its
+	// admission outcome. ReportAccepted does not indicate successful delivery.
+	TryReport(Request) ReportResult
+	// Shutdown stops accepting reports and drains accepted work until ctx
+	// expires. When ctx expires, in-flight report contexts are cancelled.
+	Shutdown(context.Context) error
 }
+
+// ReportResult describes whether an asynchronous report was accepted.
+// ReportAccepted does not indicate successful delivery.
+type ReportResult string
+
+const (
+	ReportAccepted     ReportResult = "accepted"
+	ReportAtCapacity   ReportResult = "at_capacity"
+	ReportShuttingDown ReportResult = "shutting_down"
+)
 
 type Request struct {
 	PartnerID        string

@@ -25,10 +25,9 @@ func TestReportBidResponseMapsFlowWithoutMutation(t *testing.T) {
 	wantBidResponse := exampleBidResponse()
 
 	pending := reportBidResponse(recorder, cfg, auction, result, bidResponse)
-	pending.Wait()
 
-	if pending.count != 1 {
-		t.Fatalf("report count = %d, want 1", pending.count)
+	if pending != 1 {
+		t.Fatalf("report count = %d, want 1", pending)
 	}
 	requests := recorder.snapshot()
 	if len(requests) != 1 {
@@ -57,11 +56,9 @@ func TestReportBidResponseSkipsMissingEndpointOrResponse(t *testing.T) {
 	auction := exampleAuction()
 
 	withoutEndpoint := reportBidResponse(recorder, config{}, auction, enrichment.Result{}, exampleBidResponse())
-	withoutEndpoint.Wait()
 	withoutResponse := reportBidResponse(recorder, config{ReportsEndpoint: "endpoint"}, auction, enrichment.Result{}, nil)
-	withoutResponse.Wait()
 
-	if withoutEndpoint.count != 0 || withoutResponse.count != 0 || len(recorder.snapshot()) != 0 {
+	if withoutEndpoint != 0 || withoutResponse != 0 || len(recorder.snapshot()) != 0 {
 		t.Fatal("reporting was not skipped")
 	}
 }
@@ -71,12 +68,13 @@ type recordingReporter struct {
 	requests []identityreporting.Request
 }
 
-func (reporter *recordingReporter) Report(_ context.Context, request identityreporting.Request) error {
+func (reporter *recordingReporter) TryReport(request identityreporting.Request) identityreporting.ReportResult {
 	reporter.mutex.Lock()
 	defer reporter.mutex.Unlock()
 	reporter.requests = append(reporter.requests, request)
-	return nil
+	return identityreporting.ReportAccepted
 }
+func (*recordingReporter) Shutdown(context.Context) error { return nil }
 
 func (reporter *recordingReporter) snapshot() []identityreporting.Request {
 	reporter.mutex.Lock()

@@ -9,8 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"runtime/debug"
-	"sync"
 	"time"
 
 	identitycache "github.com/Intent-IQ/identity-go/cache"
@@ -67,11 +65,11 @@ func run() error {
 	// At auction-response time, the host maps each bid and starts reporting asynchronously.
 	bidResponse := exampleBidResponse()
 	reports := reportBidResponse(reporter, cfg, enrichedAuction, enrichmentResult, bidResponse)
-	slog.Info("impression reports queued", "count", reports.count, "bid_response_mutated", false)
+	slog.Info("impression reports queued", "count", reports, "bid_response_mutated", false)
 
-	// A long-running server does not wait here; this example waits before process shutdown.
-	reports.Wait()
-	return nil
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return reporter.Shutdown(shutdownCtx)
 }
 
 func runEnrichmentExample(enricher enrichment.Enricher, cfg config) (*openrtb2.BidRequest, enrichment.Result) {
@@ -141,32 +139,24 @@ func setupReporting() (identityreporting.Reporter, error) {
 		API:     reportingapi.NewClient(http.DefaultClient),
 		Metrics: identityreporting.NoopMetrics{},
 		Logger:  exampleLogger{},
-	})
+	}, identityreporting.Config{MaxConcurrentCalls: 4})
 	if err != nil {
 		return nil, fmt.Errorf("create reporter: %w", err)
 	}
 	return reporter, nil
 }
 
-type pendingReports struct {
-	sync.WaitGroup
-	count int
-}
-
-// reportBidResponse demonstrates the adapter-owned portion of the flow. It only
-// reads the bid response and starts one detached report per bid. A real server
-// can return its auction response immediately instead of waiting as this short-
-// lived command does before process exit.
+// reportBidResponse maps bids into non-blocking reporting submissions.
 func reportBidResponse(
 	reporter identityreporting.Reporter,
 	cfg config,
 	auction *openrtb2.BidRequest,
 	result enrichment.Result,
 	bidResponse *openrtb2.BidResponse,
-) *pendingReports {
-	pending := &pendingReports{}
+) int {
+	accepted := 0
 	if cfg.ReportsEndpoint == "" || bidResponse == nil {
-		return pending
+		return accepted
 	}
 
 	currency := bidResponse.Cur
@@ -187,24 +177,12 @@ func reportBidResponse(
 				ABTestUUID:       result.ABTestUUID,
 				TerminationCause: result.TerminationCause,
 			}
-			pending.Add(1)
-			pending.count++
-			go func() {
-				defer pending.Done()
-				defer func() {
-					if recovered := recover(); recovered != nil {
-						slog.Error("panic in impression report",
-							"partner_id", cfg.PartnerID,
-							"panic", recovered,
-							"stack", string(debug.Stack()),
-						)
-					}
-				}()
-				_ = reporter.Report(context.Background(), request)
-			}()
+			if reporter.TryReport(request) == identityreporting.ReportAccepted {
+				accepted++
+			}
 		}
 	}
-	return pending
+	return accepted
 }
 
 func terminationCause(value *int64) any {

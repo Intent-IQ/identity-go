@@ -1,6 +1,6 @@
 # Identity enrichment and reporting example
 
-This example shows how a host application wires identity enrichment, Valkey caching, and impression reporting. It demonstrates host-owned EID mutation, fail-open handling, bid iteration, asynchronous reporting, and panic recovery.
+This example shows how a host application wires identity enrichment, Valkey caching, and impression reporting. It demonstrates host-owned EID mutation, fail-open handling, bid iteration, and asynchronous reporting.
 
 Docker Compose starts Valkey and a local mock that accepts both S2S identity resolution and impression reports.
 

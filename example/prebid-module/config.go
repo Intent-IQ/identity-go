@@ -9,6 +9,7 @@ import (
 	iiqidaerospikestore "github.com/Intent-IQ/identity-go/integrations/aerospike"
 	iiqidredisstore "github.com/Intent-IQ/identity-go/integrations/redis"
 	iiqidvalkeystore "github.com/Intent-IQ/identity-go/integrations/valkey"
+	iiqidreporting "github.com/Intent-IQ/identity-go/reporting"
 )
 
 type Config struct {
@@ -24,14 +25,16 @@ type Config struct {
 	Valkey    *iiqidvalkeystore.Config    `json:"valkey" yaml:"valkey"`
 	Aerospike *iiqidaerospikestore.Config `json:"aerospike" yaml:"aerospike"`
 
-	MetricsEnabled bool `json:"metrics_enabled" yaml:"metrics_enabled"`
-	MetricsPort    int  `json:"metrics_port" yaml:"metrics_port"`
+	MetricsEnabled bool                  `json:"metrics_enabled" yaml:"metrics_enabled"`
+	MetricsPort    int                   `json:"metrics_port" yaml:"metrics_port"`
+	Reporting      iiqidreporting.Config `json:"reporting" yaml:"reporting"`
 }
 
 func defaultConfig() Config {
 	return Config{
 		Timeout:        1000,
 		MetricsEnabled: true,
+		Reporting:      iiqidreporting.Config{MaxConcurrentCalls: 16},
 		Cache: iiqidcache.Config{
 			TTLSeconds:                  43_200,
 			MaxKeys:                     10,
@@ -66,6 +69,11 @@ func (config Config) validate() error {
 	if config.MaxConcurrentCalls < 0 {
 		return fmt.Errorf("max_concurrent_calls must not be negative")
 	}
+	if config.Reporting != (iiqidreporting.Config{}) {
+		if err := config.Reporting.Validate(); err != nil {
+			return err
+		}
+	}
 	if config.WaitTimeout != nil && *config.WaitTimeout < config.Timeout {
 		if !config.Cache.Enabled {
 			return fmt.Errorf("cache must be enabled when wait_timeout is less than timeout")
@@ -87,6 +95,7 @@ func (config Config) resolve(accountConfig json.RawMessage) Config {
 		return config
 	}
 	resolved.MaxConcurrentCalls = config.MaxConcurrentCalls
+	resolved.Reporting = config.Reporting
 	if err := resolved.validate(); err != nil {
 		return config
 	}

@@ -120,7 +120,7 @@ func Builder(rawConfig json.RawMessage, dependencies moduledeps.ModuleDeps) (int
 		API:     iiqidreportingapi.NewClient(httpClient),
 		Metrics: reportingMetrics,
 		Logger:  logger,
-	})
+	}, config.Reporting)
 	if err != nil {
 		if store != nil {
 			_ = store.Close()
@@ -148,6 +148,13 @@ func (module *Module) MetricsGatherer() prometheus.Gatherer {
 }
 
 func (module *Module) Shutdown() error {
+	if module.reporter != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*module.config.timeout()+time.Second)
+		defer cancel()
+		if err := module.reporter.Shutdown(ctx); err != nil {
+			return fmt.Errorf("shutdown identity reporter: %w", err)
+		}
+	}
 	if module.enricher != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*module.config.timeout()+time.Second)
 		defer cancel()

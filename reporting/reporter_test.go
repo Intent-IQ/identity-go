@@ -13,7 +13,7 @@ import (
 )
 
 func TestNewReporterRequiresAPI(t *testing.T) {
-	reporter, err := New(Dependencies{})
+	reporter, err := New(Dependencies{}, Config{MaxConcurrentCalls: 1})
 	if !errors.Is(err, errAPIRequired) {
 		t.Fatalf("New() error = %v, want %v", err, errAPIRequired)
 	}
@@ -24,11 +24,8 @@ func TestNewReporterRequiresAPI(t *testing.T) {
 
 func TestNewReporterDefaultsNilDependencies(t *testing.T) {
 	api := &reportingAPIStub{}
-	reporter, err := New(Dependencies{API: api})
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-	if err := reporter.Report(t.Context(), baseReportingRequest()); err != nil {
+	reporter := mustNewReporter(t, Dependencies{API: api})
+	if err := reporter.report(t.Context(), baseReportingRequest()); err != nil {
 		t.Fatalf("Report() error = %v", err)
 	}
 }
@@ -42,7 +39,7 @@ func TestReporterEmptyEndpointIsNoop(t *testing.T) {
 
 	request := baseReportingRequest()
 	request.Endpoint = ""
-	if err := reporter.Report(t.Context(), request); err != nil {
+	if err := reporter.report(t.Context(), request); err != nil {
 		t.Fatalf("Report() error = %v", err)
 	}
 	if events := recorder.snapshot(); len(events) != 0 {
@@ -56,7 +53,7 @@ func TestReporterWhitespaceEndpointIsNotEmpty(t *testing.T) {
 	request := baseReportingRequest()
 	request.Endpoint = " "
 
-	if err := reporter.Report(t.Context(), request); err != nil {
+	if err := reporter.report(t.Context(), request); err != nil {
 		t.Fatalf("Report() error = %v", err)
 	}
 	if got := api.callCount(); got != 1 {
@@ -72,7 +69,7 @@ func TestReporterSuccessForwardsExactURLAndRecordsMetric(t *testing.T) {
 	reporter := mustNewReporter(t, Dependencies{API: api, Metrics: metrics, Logger: logger})
 
 	request := baseReportingRequest()
-	if err := reporter.Report(t.Context(), request); err != nil {
+	if err := reporter.report(t.Context(), request); err != nil {
 		t.Fatalf("Report() error = %v", err)
 	}
 	wantURL := "https://reports.example/path?at=45&rtype=1&source=pbsgo&dpi=partner&rdata=%7B%22bidderCode%22%3A%22bidder%22%2C%22partnerId%22%3A%22partner%22%2C%22cpm%22%3A1.5%2C%22currency%22%3A%22EUR%22%2C%22placementId%22%3A%22imp%22%2C%22biddingPlatformId%22%3A%224%22%7D"
@@ -98,7 +95,7 @@ func TestReporterReturnsOriginalAPIErrorsAndRecordsFailure(t *testing.T) {
 			logger := &reportingLoggerStub{events: recorder}
 			reporter := mustNewReporter(t, Dependencies{API: api, Metrics: metrics, Logger: logger})
 
-			err := reporter.Report(t.Context(), baseReportingRequest())
+			err := reporter.report(t.Context(), baseReportingRequest())
 			if err != test.err {
 				t.Fatalf("Report() error = %v, want original error %v", err, test.err)
 			}
@@ -127,7 +124,7 @@ func TestReporterAppliesPositiveTimeoutAroundAPICall(t *testing.T) {
 	request := baseReportingRequest()
 	request.Timeout = time.Second
 
-	if err := reporter.Report(t.Context(), request); err != nil {
+	if err := reporter.report(t.Context(), request); err != nil {
 		t.Fatalf("Report() error = %v", err)
 	}
 }
@@ -142,7 +139,7 @@ func TestReporterZeroAndNegativeTimeoutExpireImmediately(t *testing.T) {
 			request := baseReportingRequest()
 			request.Timeout = timeout
 
-			if err := reporter.Report(t.Context(), request); !errors.Is(err, context.DeadlineExceeded) {
+			if err := reporter.report(t.Context(), request); !errors.Is(err, context.DeadlineExceeded) {
 				t.Fatalf("Report() error = %v, want context.DeadlineExceeded", err)
 			}
 		})
@@ -154,7 +151,7 @@ func TestReporterDoesNotCancelCallerContext(t *testing.T) {
 	defer cancel()
 	reporter := mustNewReporter(t, Dependencies{API: &reportingAPIStub{}})
 
-	if err := reporter.Report(callerContext, baseReportingRequest()); err != nil {
+	if err := reporter.report(callerContext, baseReportingRequest()); err != nil {
 		t.Fatalf("Report() error = %v", err)
 	}
 	if err := callerContext.Err(); err != nil {
@@ -174,7 +171,7 @@ func TestReporterConcurrentCalls(t *testing.T) {
 		waitGroup.Add(1)
 		go func() {
 			defer waitGroup.Done()
-			if err := reporter.Report(t.Context(), baseReportingRequest()); err != nil {
+			if err := reporter.report(t.Context(), baseReportingRequest()); err != nil {
 				errorsFound <- err
 			}
 		}()
@@ -203,12 +200,20 @@ func baseReportingRequest() Request {
 	}
 }
 
-func mustNewReporter(t *testing.T, dependencies Dependencies) Reporter {
+func mustNewReporter(t *testing.T, dependencies Dependencies) *reporter {
 	t.Helper()
-	reporter, err := New(dependencies)
+	value, err := New(dependencies, Config{MaxConcurrentCalls: 1})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
+	reporter := value.(*reporter)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := reporter.Shutdown(ctx); err != nil {
+			t.Errorf("Shutdown() error = %v", err)
+		}
+	})
 	return reporter
 }
 
