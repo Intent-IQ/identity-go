@@ -62,14 +62,17 @@ func (reporter *reporter) TryReport(request Request) ReportResult {
 		reporter.reject(request.PartnerID, ReportShuttingDown)
 		return ReportShuttingDown
 	}
+
 	if !reporter.limiter.TryAcquire() {
 		if reporter.closing.Load() {
 			reporter.reject(request.PartnerID, ReportShuttingDown)
 			return ReportShuttingDown
 		}
+
 		reporter.reject(request.PartnerID, ReportAtCapacity)
 		return ReportAtCapacity
 	}
+
 	if reporter.closing.Load() {
 		reporter.limiter.Release()
 		reporter.reject(request.PartnerID, ReportShuttingDown)
@@ -82,6 +85,7 @@ func (reporter *reporter) TryReport(request Request) ReportResult {
 		defer reporter.metrics.ReportingFinished()
 		_ = reporter.report(reporter.reportContext, request)
 	}()
+
 	return ReportAccepted
 }
 
@@ -106,17 +110,20 @@ func (reporter *reporter) report(ctx context.Context, request Request) error {
 	defer func() {
 		reporter.metrics.ImpressionAPIRequestDuration(request.PartnerID, time.Since(started))
 	}()
+
 	if err := reporter.api.ReportImpression(reportContext, requestURL); err != nil {
 		reporter.metrics.ImpressionError(request.PartnerID)
 		reporter.logger.Warn(fmt.Sprintf("intentiq-identity: impression report failed (dpi=%s): %v", request.PartnerID, err))
 		return err
 	}
+
 	reporter.metrics.ImpressionReported(request.PartnerID)
 	return nil
 }
 
 func (reporter *reporter) Shutdown(ctx context.Context) error {
 	reporter.closing.Store(true)
+
 	reporter.drainOnce.Do(func() {
 		go func() {
 			reporter.limiter.Drain()

@@ -177,6 +177,7 @@ func reportBidResponse(
 				ABTestUUID:       result.ABTestUUID,
 				TerminationCause: result.TerminationCause,
 			}
+
 			if reporter.TryReport(request) == identityreporting.ReportAccepted {
 				accepted++
 			}

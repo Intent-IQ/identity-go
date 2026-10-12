@@ -63,17 +63,21 @@ func (config Config) validate() error {
 	if config.Timeout <= 0 {
 		return fmt.Errorf("timeout must be positive")
 	}
+
 	if config.WaitTimeout != nil && *config.WaitTimeout < 0 {
 		return fmt.Errorf("wait_timeout must not be negative")
 	}
+
 	if config.MaxConcurrentCalls < 0 {
 		return fmt.Errorf("max_concurrent_calls must not be negative")
 	}
+
 	if config.Reporting != (iiqidreporting.Config{}) {
 		if err := config.Reporting.Validate(); err != nil {
 			return err
 		}
 	}
+
 	if config.WaitTimeout != nil && *config.WaitTimeout < config.Timeout {
 		if !config.Cache.Enabled {
 			return fmt.Errorf("cache must be enabled when wait_timeout is less than timeout")
@@ -82,6 +86,7 @@ func (config Config) validate() error {
 			return fmt.Errorf("max_concurrent_calls must be positive when wait_timeout is less than timeout")
 		}
 	}
+
 	return nil
 }
 
@@ -90,14 +95,18 @@ func (config Config) resolve(accountConfig json.RawMessage) Config {
 	if len(accountConfig) == 0 {
 		return config
 	}
+
 	resolved := config
 	if err := json.Unmarshal(accountConfig, &resolved); err != nil {
 		return config
 	}
+
 	resolved.MaxConcurrentCalls = config.MaxConcurrentCalls
 	resolved.Reporting = config.Reporting
+
 	if err := resolved.validate(); err != nil {
 		return config
 	}
+
 	return resolved
 }

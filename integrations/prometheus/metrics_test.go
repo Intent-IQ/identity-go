@@ -197,7 +197,14 @@ func TestNewReusesCollectorsWithoutDuplicateRegistration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second New() error = %v", err)
 	}
-	if first.requests != second.requests || first.impressionReported != second.impressionReported || first.impressionError != second.impressionError || first.impressionRejected != second.impressionRejected || first.impressionLatency != second.impressionLatency || first.reportingActive != second.reportingActive || first.reportingCapacity != second.reportingCapacity || first.l2GetLatency != second.l2GetLatency {
+	if first.requests != second.requests ||
+		first.impressionReported != second.impressionReported ||
+		first.impressionError != second.impressionError ||
+		first.impressionRejected != second.impressionRejected ||
+		first.impressionLatency != second.impressionLatency ||
+		first.reportingActive != second.reportingActive ||
+		first.reportingCapacity != second.reportingCapacity ||
+		first.l2GetLatency != second.l2GetLatency {
 		t.Fatal("New() did not reuse already registered collectors")
 	}
 	first.Request("partner")

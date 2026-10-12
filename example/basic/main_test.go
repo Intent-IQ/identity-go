@@ -74,6 +74,7 @@ func (reporter *recordingReporter) TryReport(request identityreporting.Request) 
 	reporter.requests = append(reporter.requests, request)
 	return identityreporting.ReportAccepted
 }
+
 func (*recordingReporter) Shutdown(context.Context) error { return nil }
 
 func (reporter *recordingReporter) snapshot() []identityreporting.Request {

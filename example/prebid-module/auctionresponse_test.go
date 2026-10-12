@@ -64,6 +64,7 @@ func (stub reporterStub) TryReport(request iiqidreporting.Request) iiqidreportin
 	stub.reports <- request
 	return iiqidreporting.ReportAccepted
 }
+
 func (reporterStub) Shutdown(context.Context) error { return nil }
 
 var _ iiqidreporting.Reporter = reporterStub{}

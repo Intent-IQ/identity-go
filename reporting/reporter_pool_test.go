@@ -12,8 +12,10 @@ func TestReporterBoundsConcurrentCalls(t *testing.T) {
 	events := &eventRecorder{}
 	started := make(chan struct{}, 2)
 	release := make(chan struct{})
+
 	var active atomic.Int64
 	var maximum atomic.Int64
+
 	metrics := &reportingMetricsStub{}
 	api := &reportingAPIStub{call: func(ctx context.Context, _ string) error {
 		current := active.Add(1)
@@ -44,13 +46,16 @@ func TestReporterBoundsConcurrentCalls(t *testing.T) {
 		t.Fatalf("first report result = %q, want %q", got, ReportAccepted)
 	}
 	waitForSignal(t, started)
+
 	if got := value.TryReport(baseReportingRequest()); got != ReportAccepted {
 		t.Fatalf("second report result = %q, want %q", got, ReportAccepted)
 	}
 	waitForSignal(t, started)
+
 	if got := value.TryReport(baseReportingRequest()); got != ReportAtCapacity {
 		t.Fatalf("saturated report result = %q, want %q", got, ReportAtCapacity)
 	}
+
 	if got := metrics.rejectedCount(ReportAtCapacity); got != 1 {
 		t.Fatalf("at-capacity rejections = %d, want 1", got)
 	}
@@ -68,6 +73,7 @@ func TestReporterBoundsConcurrentCalls(t *testing.T) {
 	if err := value.Shutdown(ctx); err != nil {
 		t.Fatalf("Shutdown() error = %v", err)
 	}
+
 	if got := value.TryReport(baseReportingRequest()); got != ReportShuttingDown {
 		t.Fatalf("post-shutdown report result = %q, want %q", got, ReportShuttingDown)
 	}
@@ -97,6 +103,7 @@ func TestReporterShutdownCancelsOnDeadline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
+
 	if got := value.TryReport(baseReportingRequest()); got != ReportAccepted {
 		t.Fatalf("report result = %q, want %q", got, ReportAccepted)
 	}
@@ -107,6 +114,7 @@ func TestReporterShutdownCancelsOnDeadline(t *testing.T) {
 	if err := value.Shutdown(ctx); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Shutdown() error = %v, want context deadline", err)
 	}
+
 	reporter := value.(*reporter)
 	select {
 	case <-reporter.drained:

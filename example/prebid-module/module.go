@@ -151,22 +151,27 @@ func (module *Module) Shutdown() error {
 	if module.reporter != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*module.config.timeout()+time.Second)
 		defer cancel()
+
 		if err := module.reporter.Shutdown(ctx); err != nil {
 			return fmt.Errorf("shutdown identity reporter: %w", err)
 		}
 	}
+
 	if module.enricher != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*module.config.timeout()+time.Second)
 		defer cancel()
+
 		if err := module.enricher.Shutdown(ctx); err != nil {
 			return fmt.Errorf("shutdown identity enricher: %w", err)
 		}
 	}
 
 	closeMetricsServer(module.metricsServer)
+
 	if module.store != nil {
 		return module.store.Close()
 	}
+
 	return nil
 }
 
