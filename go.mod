@@ -1,6 +1,6 @@
 module github.com/Intent-IQ/identity-go
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/coocood/freecache v1.2.1
