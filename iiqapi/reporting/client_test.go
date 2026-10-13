@@ -42,13 +42,11 @@ func TestReportImpressionSendsExactURLWithGET(t *testing.T) {
 	}
 }
 
-func TestReportImpressionTreatsEveryResponseStatusAsSuccess(t *testing.T) {
+func TestReportImpressionAcceptsSuccessfulResponseStatuses(t *testing.T) {
 	statuses := []int{
 		http.StatusOK,
 		http.StatusNoContent,
-		http.StatusFound,
-		http.StatusBadRequest,
-		http.StatusInternalServerError,
+		299,
 	}
 	for _, status := range statuses {
 		t.Run(http.StatusText(status), func(t *testing.T) {
@@ -64,6 +62,43 @@ func TestReportImpressionTreatsEveryResponseStatusAsSuccess(t *testing.T) {
 			}
 			if err := NewClient(httpClient).ReportImpression(t.Context(), server.URL); err != nil {
 				t.Fatalf("ReportImpression() for status %d error = %v", status, err)
+			}
+		})
+	}
+}
+
+func TestReportImpressionRejectsNonSuccessfulResponseStatuses(t *testing.T) {
+	statuses := []int{
+		http.StatusMultipleChoices,
+		http.StatusBadRequest,
+		http.StatusTooManyRequests,
+		http.StatusInternalServerError,
+	}
+
+	for _, status := range statuses {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(status)
+				_, _ = io.WriteString(w, "response body")
+			}))
+			t.Cleanup(server.Close)
+
+			httpClient := server.Client()
+			httpClient.CheckRedirect = func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			}
+			err := NewClient(httpClient).ReportImpression(t.Context(), server.URL)
+			assertAPIError(t, err, iiqapi.ErrorStatus)
+
+			var apiError *iiqapi.Error
+			if !errors.As(err, &apiError) {
+				t.Fatalf("error = %v, want *iiqapi.Error", err)
+			}
+			if apiError.Status != status {
+				t.Fatalf("status = %d, want %d", apiError.Status, status)
+			}
+			if !strings.Contains(err.Error(), "response body") {
+				t.Fatalf("error = %q, want response body", err)
 			}
 		})
 	}
@@ -108,9 +143,8 @@ func TestReportImpressionDrainsAndClosesBody(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusTeapot, Body: body, Header: make(http.Header)}, nil
 	})}
 
-	if err := NewClient(httpClient).ReportImpression(t.Context(), "https://example.test/report"); err != nil {
-		t.Fatalf("ReportImpression() error = %v", err)
-	}
+	err := NewClient(httpClient).ReportImpression(t.Context(), "https://example.test/report")
+	assertAPIError(t, err, iiqapi.ErrorStatus)
 	if !body.closed {
 		t.Fatal("response body was not closed")
 	}
@@ -137,7 +171,7 @@ func TestReportImpressionReusesConnection(t *testing.T) {
 	peers := make(chan string, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		peers <- r.RemoteAddr
-		w.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, strings.Repeat("x", 4096))
 	}))
 	t.Cleanup(server.Close)

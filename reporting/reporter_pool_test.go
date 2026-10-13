@@ -2,11 +2,103 @@ package reporting
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestReporterSnapshotsRequestBeforeReturning(t *testing.T) {
+	urls := make(chan string, 1)
+	api := &reportingAPIStub{call: func(_ context.Context, requestURL string) error {
+		urls <- requestURL
+		return nil
+	}}
+	value, err := New(Dependencies{API: api}, Config{MaxConcurrentCalls: 1})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	ext := json.RawMessage(`{"origbidcpm":1.25}`)
+	terminationCause := int64(7)
+	request := baseReportingRequest()
+	request.Bid.Ext = ext
+	request.TerminationCause = &terminationCause
+
+	if got := value.TryReport(request); got != ReportAccepted {
+		t.Fatalf("report result = %q, want %q", got, ReportAccepted)
+	}
+
+	copy(ext, `{"origbidcpm":9.99}`)
+	terminationCause = 99
+
+	var requestURL string
+	select {
+	case requestURL = <-urls:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for report")
+	}
+
+	rdata := decodeRData(t, requestURL)
+	assertJSONNumber(t, rdata, "originalCpm", "1.25")
+	assertJSONNumber(t, rdata, "terminationCause", "7")
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	if err := value.Shutdown(ctx); err != nil {
+		t.Fatalf("Shutdown() error = %v", err)
+	}
+}
+
+func TestReporterRecoversWorkerPanicAndReleasesCapacity(t *testing.T) {
+	var calls atomic.Int64
+	api := &reportingAPIStub{call: func(context.Context, string) error {
+		if calls.Add(1) == 1 {
+			panic("reporting API panic")
+		}
+		return nil
+	}}
+	metrics := &reportingMetricsStub{}
+	panicLogs := make(chan string, 1)
+	value, err := New(
+		Dependencies{API: api, Metrics: metrics, Logger: &reportingLoggerStub{errors: panicLogs}},
+		Config{MaxConcurrentCalls: 1},
+	)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	if got := value.TryReport(baseReportingRequest()); got != ReportAccepted {
+		t.Fatalf("first report result = %q, want %q", got, ReportAccepted)
+	}
+
+	select {
+	case message := <-panicLogs:
+		if !strings.Contains(message, "reporting API panic") || !strings.Contains(message, "goroutine") {
+			t.Fatalf("panic log = %q, want panic and stack", message)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for panic recovery")
+	}
+
+	if gotActive, gotCapacity := metrics.reportingState(); gotActive != 0 || gotCapacity != 1 {
+		t.Fatalf("reporting state after panic = active %d capacity %d, want active 0 capacity 1", gotActive, gotCapacity)
+	}
+	if got := metrics.errorCount(); got != 1 {
+		t.Fatalf("reporting errors after panic = %d, want 1", got)
+	}
+	if got := value.TryReport(baseReportingRequest()); got != ReportAccepted {
+		t.Fatalf("second report result = %q, want %q", got, ReportAccepted)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	if err := value.Shutdown(ctx); err != nil {
+		t.Fatalf("Shutdown() error = %v", err)
+	}
+}
 
 func TestReporterBoundsConcurrentCalls(t *testing.T) {
 	events := &eventRecorder{}

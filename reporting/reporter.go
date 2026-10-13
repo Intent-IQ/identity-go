@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -13,6 +14,12 @@ import (
 )
 
 var errAPIRequired = errors.New("reporting API is required")
+
+type reportJob struct {
+	partnerID  string
+	requestURL string
+	timeout    time.Duration
+}
 
 type reporter struct {
 	logger logging.Logger
@@ -79,14 +86,52 @@ func (reporter *reporter) TryReport(request Request) ReportResult {
 		return ReportShuttingDown
 	}
 
+	job := newReportJob(request)
 	reporter.metrics.ReportingStarted()
-	go func() {
-		defer reporter.limiter.Release()
-		defer reporter.metrics.ReportingFinished()
-		_ = reporter.report(reporter.reportContext, request)
-	}()
+	go reporter.run(job)
 
 	return ReportAccepted
+}
+
+func newReportJob(request Request) reportJob {
+	requestURL := ""
+	if request.Endpoint != "" {
+		requestURL = buildReportURL(request)
+	}
+
+	return reportJob{
+		partnerID:  request.PartnerID,
+		requestURL: requestURL,
+		timeout:    request.Timeout,
+	}
+}
+
+func (reporter *reporter) run(job reportJob) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			reporter.recordPanic(job.partnerID, recovered)
+		}
+	}()
+	defer reporter.limiter.Release()
+	defer reporter.metrics.ReportingFinished()
+
+	_ = reporter.report(reporter.reportContext, job)
+}
+
+func (reporter *reporter) recordPanic(partnerID string, recovered any) {
+	// Host-provided observability implementations must not be able to re-panic
+	// an owned background goroutine after the original panic was contained.
+	func() {
+		defer func() { _ = recover() }()
+		reporter.metrics.ImpressionError(partnerID)
+	}()
+
+	defer func() { _ = recover() }()
+	reporter.logger.Error(fmt.Sprintf(
+		"intentiq-identity: panic in impression report: %v\n%s",
+		recovered,
+		debug.Stack(),
+	))
 }
 
 func (reporter *reporter) reject(partnerID string, result ReportResult) {
@@ -97,27 +142,26 @@ func (reporter *reporter) reject(partnerID string, result ReportResult) {
 	))
 }
 
-func (reporter *reporter) report(ctx context.Context, request Request) error {
-	if request.Endpoint == "" {
+func (reporter *reporter) report(ctx context.Context, job reportJob) error {
+	if job.requestURL == "" {
 		return nil
 	}
 
-	requestURL := buildReportURL(request)
-	reportContext, cancel := context.WithTimeout(ctx, request.Timeout)
+	reportContext, cancel := context.WithTimeout(ctx, job.timeout)
 	defer cancel()
 
 	started := time.Now()
 	defer func() {
-		reporter.metrics.ImpressionAPIRequestDuration(request.PartnerID, time.Since(started))
+		reporter.metrics.ImpressionAPIRequestDuration(job.partnerID, time.Since(started))
 	}()
 
-	if err := reporter.api.ReportImpression(reportContext, requestURL); err != nil {
-		reporter.metrics.ImpressionError(request.PartnerID)
-		reporter.logger.Warn(fmt.Sprintf("intentiq-identity: impression report failed (dpi=%s): %v", request.PartnerID, err))
+	if err := reporter.api.ReportImpression(reportContext, job.requestURL); err != nil {
+		reporter.metrics.ImpressionError(job.partnerID)
+		reporter.logger.Warn(fmt.Sprintf("intentiq-identity: impression report failed (dpi=%s): %v", job.partnerID, err))
 		return err
 	}
 
-	reporter.metrics.ImpressionReported(request.PartnerID)
+	reporter.metrics.ImpressionReported(job.partnerID)
 	return nil
 }
 

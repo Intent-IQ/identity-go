@@ -25,7 +25,7 @@ func TestNewReporterRequiresAPI(t *testing.T) {
 func TestNewReporterDefaultsNilDependencies(t *testing.T) {
 	api := &reportingAPIStub{}
 	reporter := mustNewReporter(t, Dependencies{API: api})
-	if err := reporter.report(t.Context(), baseReportingRequest()); err != nil {
+	if err := reporter.report(t.Context(), newReportJob(baseReportingRequest())); err != nil {
 		t.Fatalf("Report() error = %v", err)
 	}
 }
@@ -39,7 +39,7 @@ func TestReporterEmptyEndpointIsNoop(t *testing.T) {
 
 	request := baseReportingRequest()
 	request.Endpoint = ""
-	if err := reporter.report(t.Context(), request); err != nil {
+	if err := reporter.report(t.Context(), newReportJob(request)); err != nil {
 		t.Fatalf("Report() error = %v", err)
 	}
 	if events := recorder.snapshot(); len(events) != 0 {
@@ -53,7 +53,7 @@ func TestReporterWhitespaceEndpointIsNotEmpty(t *testing.T) {
 	request := baseReportingRequest()
 	request.Endpoint = " "
 
-	if err := reporter.report(t.Context(), request); err != nil {
+	if err := reporter.report(t.Context(), newReportJob(request)); err != nil {
 		t.Fatalf("Report() error = %v", err)
 	}
 	if got := api.callCount(); got != 1 {
@@ -69,7 +69,7 @@ func TestReporterSuccessForwardsExactURLAndRecordsMetric(t *testing.T) {
 	reporter := mustNewReporter(t, Dependencies{API: api, Metrics: metrics, Logger: logger})
 
 	request := baseReportingRequest()
-	if err := reporter.report(t.Context(), request); err != nil {
+	if err := reporter.report(t.Context(), newReportJob(request)); err != nil {
 		t.Fatalf("Report() error = %v", err)
 	}
 	wantURL := "https://reports.example/path?at=45&rtype=1&source=pbsgo&dpi=partner&rdata=%7B%22bidderCode%22%3A%22bidder%22%2C%22partnerId%22%3A%22partner%22%2C%22cpm%22%3A1.5%2C%22currency%22%3A%22EUR%22%2C%22placementId%22%3A%22imp%22%2C%22biddingPlatformId%22%3A%224%22%7D"
@@ -98,7 +98,7 @@ func TestReporterReturnsOriginalAPIErrorsAndRecordsFailure(t *testing.T) {
 			logger := &reportingLoggerStub{events: recorder}
 			reporter := mustNewReporter(t, Dependencies{API: api, Metrics: metrics, Logger: logger})
 
-			err := reporter.report(t.Context(), baseReportingRequest())
+			err := reporter.report(t.Context(), newReportJob(baseReportingRequest()))
 			if err != test.err {
 				t.Fatalf("Report() error = %v, want original error %v", err, test.err)
 			}
@@ -127,7 +127,7 @@ func TestReporterAppliesPositiveTimeoutAroundAPICall(t *testing.T) {
 	request := baseReportingRequest()
 	request.Timeout = time.Second
 
-	if err := reporter.report(t.Context(), request); err != nil {
+	if err := reporter.report(t.Context(), newReportJob(request)); err != nil {
 		t.Fatalf("Report() error = %v", err)
 	}
 }
@@ -142,7 +142,7 @@ func TestReporterZeroAndNegativeTimeoutExpireImmediately(t *testing.T) {
 			request := baseReportingRequest()
 			request.Timeout = timeout
 
-			if err := reporter.report(t.Context(), request); !errors.Is(err, context.DeadlineExceeded) {
+			if err := reporter.report(t.Context(), newReportJob(request)); !errors.Is(err, context.DeadlineExceeded) {
 				t.Fatalf("Report() error = %v, want context.DeadlineExceeded", err)
 			}
 		})
@@ -154,7 +154,7 @@ func TestReporterDoesNotCancelCallerContext(t *testing.T) {
 	defer cancel()
 	reporter := mustNewReporter(t, Dependencies{API: &reportingAPIStub{}})
 
-	if err := reporter.report(callerContext, baseReportingRequest()); err != nil {
+	if err := reporter.report(callerContext, newReportJob(baseReportingRequest())); err != nil {
 		t.Fatalf("Report() error = %v", err)
 	}
 	if err := callerContext.Err(); err != nil {
@@ -174,7 +174,7 @@ func TestReporterConcurrentCalls(t *testing.T) {
 		waitGroup.Add(1)
 		go func() {
 			defer waitGroup.Done()
-			if err := reporter.report(t.Context(), baseReportingRequest()); err != nil {
+			if err := reporter.report(t.Context(), newReportJob(baseReportingRequest())); err != nil {
 				errorsFound <- err
 			}
 		}()
@@ -303,6 +303,12 @@ func (metrics *reportingMetricsStub) reportedCount() int {
 	return metrics.reported
 }
 
+func (metrics *reportingMetricsStub) errorCount() int {
+	metrics.mutex.Lock()
+	defer metrics.mutex.Unlock()
+	return metrics.errors
+}
+
 func (metrics *reportingMetricsStub) ReportingCapacity(capacity int) {
 	metrics.mutex.Lock()
 	defer metrics.mutex.Unlock()
@@ -341,6 +347,7 @@ func (metrics *reportingMetricsStub) latencyCount() int {
 
 type reportingLoggerStub struct {
 	events *eventRecorder
+	errors chan<- string
 }
 
 func (logger *reportingLoggerStub) Debug(message string) {
@@ -358,6 +365,9 @@ func (logger *reportingLoggerStub) Warn(message string) {
 func (logger *reportingLoggerStub) Error(message string) {
 	if logger.events != nil {
 		logger.events.add("error-log:" + message)
+	}
+	if logger.errors != nil {
+		logger.errors <- message
 	}
 }
 

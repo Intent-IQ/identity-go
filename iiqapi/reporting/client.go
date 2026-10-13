@@ -3,6 +3,7 @@ package reporting
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -31,8 +32,18 @@ func (c *Client) ReportImpression(ctx context.Context, requestURL string) error 
 		}
 		return &iiqapi.Error{Kind: kind, Err: err}
 	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		body, _ := io.ReadAll(resp.Body)
+		return &iiqapi.Error{
+			Kind:   iiqapi.ErrorStatus,
+			Status: resp.StatusCode,
+			Err:    fmt.Errorf("reporting API returned %d: %s", resp.StatusCode, body),
+		}
+	}
+
 	_, _ = io.Copy(io.Discard, resp.Body)
-	_ = resp.Body.Close()
 	return nil
 }
 
