@@ -60,9 +60,11 @@ type reporterStub struct {
 	reports chan<- iiqidreporting.Request
 }
 
-func (stub reporterStub) Report(_ context.Context, request iiqidreporting.Request) error {
+func (stub reporterStub) TryReport(request iiqidreporting.Request) iiqidreporting.ReportResult {
 	stub.reports <- request
-	return nil
+	return iiqidreporting.ReportAccepted
 }
+
+func (reporterStub) Shutdown(context.Context) error { return nil }
 
 var _ iiqidreporting.Reporter = reporterStub{}

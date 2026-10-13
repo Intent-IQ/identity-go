@@ -1,5 +1,7 @@
 GO ?= go
 
+include version.env
+
 MODULES := \
 	. \
 	cmd/benchmark \
@@ -15,7 +17,7 @@ GO_FILES := $(shell git ls-files --cached --others --exclude-standard '*.go')
 .DEFAULT_GOAL := help
 
 .PHONY: help smoke check build-basic benchmark test lint vet fmt fmt-check \
-	deps deps-tidy deps-check deps-update
+	deps deps-tidy deps-check deps-update release-tags
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "; print "Available commands:"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -29,6 +31,9 @@ check: deps-check test lint ## Run the complete validation suite
 build-basic: ## Build the basic example into bin/basic
 	@mkdir -p bin
 	$(GO) build -C example/basic -o ../../bin/basic .
+
+release-tags: ## Validate and create release tags from version.env
+	@scripts/tag-release.sh "$(VERSION)"
 
 # Benchmark defaults. Override them on the command line, for example:
 # make benchmark ENDPOINT=https://s2s.example.test/profiles PARTNER=example-partner ITERATIONS=100

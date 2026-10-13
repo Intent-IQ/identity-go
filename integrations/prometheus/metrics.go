@@ -35,6 +35,10 @@ type Metrics struct {
 
 	impressionReported *prom.CounterVec
 	impressionError    *prom.CounterVec
+	impressionRejected *prom.CounterVec
+	impressionLatency  *prom.HistogramVec
+	reportingActive    prom.Gauge
+	reportingCapacity  prom.Gauge
 
 	l2GetLatency prom.Histogram
 	l2PutLatency prom.Histogram
@@ -121,6 +125,32 @@ func New(registerer prom.Registerer) (*Metrics, error) {
 	), []string{"partner_id"})); err != nil {
 		return nil, err
 	}
+	if metrics.impressionRejected, err = registerCounterVec(registerer, prom.NewCounterVec(counterOpts(
+		"impression_rejected_total", "Impression reports rejected before execution, by reason (at_capacity|shutting_down) and partner_id.",
+	), []string{"reason", "partner_id"})); err != nil {
+		return nil, err
+	}
+	if metrics.impressionLatency, err = registerHistogramVec(registerer, prom.NewHistogramVec(histogramOpts(
+		"impression_api_latency_seconds", "Impression reporting API call duration in seconds, by partner_id.", prom.DefBuckets,
+	), []string{"partner_id"})); err != nil {
+		return nil, err
+	}
+	if metrics.reportingActive, err = registerGauge(registerer, prom.NewGauge(prom.GaugeOpts{
+		Namespace: Namespace,
+		Subsystem: Subsystem,
+		Name:      "reporting_active",
+		Help:      "Current number of admitted impression reporting jobs.",
+	})); err != nil {
+		return nil, err
+	}
+	if metrics.reportingCapacity, err = registerGauge(registerer, prom.NewGauge(prom.GaugeOpts{
+		Namespace: Namespace,
+		Subsystem: Subsystem,
+		Name:      "reporting_capacity",
+		Help:      "Maximum number of concurrently admitted impression reporting jobs.",
+	})); err != nil {
+		return nil, err
+	}
 	if metrics.l2GetLatency, err = registerHistogram(registerer, prom.NewHistogram(histogramOpts(
 		"l2_get_latency_seconds", "L2 (shared store) GET duration in seconds.", l2LatencyBuckets,
 	))); err != nil {
@@ -189,6 +219,26 @@ func (metrics *Metrics) ImpressionReported(partnerID string) {
 
 func (metrics *Metrics) ImpressionError(partnerID string) {
 	metrics.impressionError.WithLabelValues(partnerID).Inc()
+}
+
+func (metrics *Metrics) ImpressionRejected(partnerID string, reason reporting.ReportResult) {
+	metrics.impressionRejected.WithLabelValues(string(reason), partnerID).Inc()
+}
+
+func (metrics *Metrics) ImpressionAPIRequestDuration(partnerID string, duration time.Duration) {
+	metrics.impressionLatency.WithLabelValues(partnerID).Observe(duration.Seconds())
+}
+
+func (metrics *Metrics) ReportingCapacity(capacity int) {
+	metrics.reportingCapacity.Set(float64(capacity))
+}
+
+func (metrics *Metrics) ReportingStarted() {
+	metrics.reportingActive.Inc()
+}
+
+func (metrics *Metrics) ReportingFinished() {
+	metrics.reportingActive.Dec()
 }
 
 func (metrics *Metrics) L2Request(operation, result string) {

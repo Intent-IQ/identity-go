@@ -2,8 +2,6 @@ package identitymodule
 
 import (
 	"context"
-	"log/slog"
-	"runtime/debug"
 
 	iiqidreporting "github.com/Intent-IQ/identity-go/reporting"
 	"github.com/prebid/prebid-server/v4/hooks/hookstage"
@@ -39,18 +37,8 @@ func (module *Module) HandleAuctionResponseHook(
 				TerminationCause: auction.TerminationCause,
 			}
 
-			go module.report(request)
+			module.reporter.TryReport(request)
 		}
 	}
 	return result, nil
-}
-
-func (module *Module) report(request iiqidreporting.Request) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			slog.Error("panic in impression report", "panic", recovered, "stack", string(debug.Stack()))
-		}
-	}()
-
-	_ = module.reporter.Report(context.Background(), request)
 }

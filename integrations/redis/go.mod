@@ -1,9 +1,9 @@
 module github.com/Intent-IQ/identity-go/integrations/redis
 
-go 1.25.0
+go 1.26.0
 
 require (
-	github.com/Intent-IQ/identity-go v0.0.0
+	github.com/Intent-IQ/identity-go v0.1.0
 	github.com/alicebob/miniredis/v2 v2.38.0
 	github.com/go-ozzo/ozzo-validation/v4 v4.3.0
 	github.com/redis/go-redis/v9 v9.7.3

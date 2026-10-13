@@ -1,9 +1,9 @@
 module github.com/Intent-IQ/identity-go/integrations/aerospike
 
-go 1.25.0
+go 1.26.0
 
 require (
-	github.com/Intent-IQ/identity-go v0.0.0
+	github.com/Intent-IQ/identity-go v0.1.0
 	github.com/aerospike/aerospike-client-go/v7 v7.10.2
 	github.com/go-ozzo/ozzo-validation/v4 v4.3.0
 )
