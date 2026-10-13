@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Release version from version.env
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.9
+          cache-dependency-path: |
+            go.sum
+            cmd/benchmark/go.sum
+            example/basic/go.sum
+            example/prebid-module/go.sum
+            integrations/aerospike/go.sum
+            integrations/prometheus/go.sum
+            integrations/redis/go.sum
+            integrations/valkey/go.sum
+
+      - name: Configure release tags
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Validate and create tags
+        run: make release-tags
+
+      - name: Push tags and create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n 's/^VERSION=//p' version.env)
+          tags="v$version"
+          for module in aerospike prometheus redis valkey; do
+            tags="$tags integrations/$module/v$version"
+          done
+          git push --atomic origin $tags
+          gh release create "v$version" --generate-notes --title "v$version"

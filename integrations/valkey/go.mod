@@ -3,7 +3,7 @@ module github.com/Intent-IQ/identity-go/integrations/valkey
 go 1.26.0
 
 require (
-	github.com/Intent-IQ/identity-go v0.0.0
+	github.com/Intent-IQ/identity-go v0.1.0
 	github.com/alicebob/miniredis/v2 v2.38.0
 	github.com/go-ozzo/ozzo-validation/v4 v4.3.0
 	github.com/valkey-io/valkey-go v1.0.76

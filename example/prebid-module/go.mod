@@ -3,7 +3,7 @@ module github.com/Intent-IQ/identity-go/example/prebid-module
 go 1.26.0
 
 require (
-	github.com/Intent-IQ/identity-go v0.0.0
+	github.com/Intent-IQ/identity-go v0.1.0
 	github.com/Intent-IQ/identity-go/integrations/aerospike v0.0.0
 	github.com/Intent-IQ/identity-go/integrations/prometheus v0.0.0
 	github.com/Intent-IQ/identity-go/integrations/redis v0.0.0

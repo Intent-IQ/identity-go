@@ -3,7 +3,7 @@ module github.com/Intent-IQ/identity-go/integrations/prometheus
 go 1.26.0
 
 require (
-	github.com/Intent-IQ/identity-go v0.0.0
+	github.com/Intent-IQ/identity-go v0.1.0
 	github.com/prometheus/client_golang v1.12.1
 	github.com/prometheus/client_model v0.2.0
 )

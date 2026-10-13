@@ -3,7 +3,7 @@ module github.com/Intent-IQ/identity-go/example/basic
 go 1.26.0
 
 require (
-	github.com/Intent-IQ/identity-go v0.0.0
+	github.com/Intent-IQ/identity-go v0.1.0
 	github.com/Intent-IQ/identity-go/integrations/valkey v0.0.0
 	github.com/prebid/openrtb/v20 v20.3.0
 	gopkg.in/yaml.v3 v3.0.1
